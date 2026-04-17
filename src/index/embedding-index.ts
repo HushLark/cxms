@@ -1,0 +1,245 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// EMBEDDING INDEX — Semantic search via vector embeddings
+// ─────────────────────────────────────────────────────────────────────────────
+// The embedding provider is injected via setEmbeddingProvider().
+// This decouples CxMS from any specific LLM SDK.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { getPlatform } from '../platform/index.js';
+import { debug } from '../debug.js';
+import { getEmbeddingsPath } from '../paths.js';
+import type { IndexNode } from './entity-index.js';
+import type { EntityIndex } from './entity-index.js';
+import type { EntityTypeName } from '../storage/entity.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMBEDDING PROVIDER — injected by the host application
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EmbeddingProvider = (texts: string[], dimensions: number) => Promise<number[][]>;
+
+let _embeddingProvider: EmbeddingProvider | null = null;
+
+export function setEmbeddingProvider(provider: EmbeddingProvider): void {
+    _embeddingProvider = provider;
+}
+
+async function getEmbeddings(texts: string[], dimensions: number): Promise<number[][]> {
+    if (!_embeddingProvider) {
+        throw new Error('CxMS: No embedding provider set. Call setEmbeddingProvider() to enable semantic search.');
+    }
+    return _embeddingProvider(texts, dimensions);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface EmbeddingEntry {
+    text: string;
+    vector: number[];
+    updatedAt: string;
+}
+
+interface EmbeddingStore {
+    version: number;
+    model: string;
+    dimensions: number;
+    entries: Record<string, EmbeddingEntry>;
+}
+
+export interface EmbeddingSearchResult {
+    key: string;
+    similarity: number;
+}
+
+export interface SyncResult {
+    added: number;
+    updated: number;
+    removed: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MODEL = 'text-embedding-3-small';
+const DIMENSIONS = 256;
+const BATCH_SIZE = 100;
+const SIMILARITY_THRESHOLD = 0.5;
+
+function cosineSimilarity(a: number[], b: number[]): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+}
+
+function buildEmbeddingText(node: Pick<IndexNode, 'title' | 'tags' | 'summary' | 'bodySnippet'>): string {
+    const parts = [node.title];
+    if (node.tags.length > 0) parts.push(`tags: ${node.tags.join(', ')}`);
+    if (node.summary) parts.push(node.summary);
+    if (node.bodySnippet) parts.push(node.bodySnippet.slice(0, 500));
+    return parts.join(' | ');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMBEDDING INDEX
+// ─────────────────────────────────────────────────────────────────────────────
+
+export class EmbeddingIndex {
+    private store: EmbeddingStore = { version: 1, model: MODEL, dimensions: DIMENSIONS, entries: {} };
+    private dirty = false;
+    private _loaded = false;
+    private queryCache = new Map<string, { vector: number[]; ts: number }>();
+    private static QUERY_CACHE_MAX = 100;
+    private static QUERY_CACHE_TTL = 300_000;
+
+    get isLoaded(): boolean { return this._loaded; }
+
+    async load(): Promise<void> {
+        try {
+            const { storage } = getPlatform();
+            const embeddingsPath = getEmbeddingsPath();
+            const raw = await storage.readFile(embeddingsPath, 'utf-8');
+            const parsed = JSON.parse(raw) as EmbeddingStore;
+            if (parsed.model !== MODEL || parsed.dimensions !== DIMENSIONS) {
+                this.store = { version: 1, model: MODEL, dimensions: DIMENSIONS, entries: {} };
+                this.dirty = true;
+            } else {
+                this.store = parsed;
+            }
+        } catch {
+            debug('embeddings', 'No embeddings.json found, starting fresh');
+        }
+        this._loaded = true;
+    }
+
+    async save(): Promise<void> {
+        if (!this.dirty) return;
+        const { storage, paths } = getPlatform();
+        const embeddingsPath = getEmbeddingsPath();
+        await storage.mkdir(paths.dirname(embeddingsPath), { recursive: true });
+        await storage.writeFile(embeddingsPath, JSON.stringify(this.store));
+        this.dirty = false;
+    }
+
+    async sync(entityIndex: EntityIndex): Promise<SyncResult> {
+        const nodes = entityIndex.getNodes();
+        const result: SyncResult = { added: 0, updated: 0, removed: 0 };
+        const currentKeys = new Set<string>();
+        const toEmbed: { key: string; text: string }[] = [];
+
+        for (const node of nodes) {
+            const key = `${node.type}:${node.id}`;
+            currentKeys.add(key);
+            const text = buildEmbeddingText(node);
+            const existing = this.store.entries[key];
+            if (!existing || existing.text !== text) {
+                toEmbed.push({ key, text });
+            }
+        }
+
+        for (const key of Object.keys(this.store.entries)) {
+            if (!currentKeys.has(key)) {
+                delete this.store.entries[key];
+                result.removed++;
+                this.dirty = true;
+            }
+        }
+
+        for (let i = 0; i < toEmbed.length; i += BATCH_SIZE) {
+            const batch = toEmbed.slice(i, i + BATCH_SIZE);
+            const texts = batch.map(b => b.text);
+            try {
+                const vectors = await getEmbeddings(texts, DIMENSIONS);
+                const now = new Date().toISOString();
+                for (let j = 0; j < batch.length; j++) {
+                    const isNew = !this.store.entries[batch[j].key];
+                    this.store.entries[batch[j].key] = { text: batch[j].text, vector: vectors[j], updatedAt: now };
+                    if (isNew) result.added++; else result.updated++;
+                }
+                this.dirty = true;
+            } catch (err) {
+                debug('embeddings', `Batch embed failed: ${err}`);
+                throw err;
+            }
+        }
+
+        await this.save();
+        return result;
+    }
+
+    async upsert(key: string, node: Pick<IndexNode, 'title' | 'tags' | 'summary' | 'bodySnippet'>): Promise<void> {
+        const text = buildEmbeddingText(node);
+        const existing = this.store.entries[key];
+        if (existing?.text === text) return;
+        try {
+            const [vector] = await getEmbeddings([text], DIMENSIONS);
+            this.store.entries[key] = { text, vector, updatedAt: new Date().toISOString() };
+            this.dirty = true;
+            await this.save();
+        } catch (err) {
+            debug('embeddings', `Failed to embed ${key}: ${err}`);
+        }
+    }
+
+    remove(key: string): void {
+        if (this.store.entries[key]) {
+            delete this.store.entries[key];
+            this.dirty = true;
+            this.save().catch(err => debug('embeddings', `Failed to save after remove: ${err}`));
+        }
+    }
+
+    private async getQueryVector(query: string): Promise<number[] | null> {
+        const cached = this.queryCache.get(query);
+        if (cached && Date.now() - cached.ts < EmbeddingIndex.QUERY_CACHE_TTL) return cached.vector;
+        try {
+            const [vector] = await getEmbeddings([query], DIMENSIONS);
+            if (this.queryCache.size >= EmbeddingIndex.QUERY_CACHE_MAX) {
+                let oldestKey: string | null = null;
+                let oldestTs = Infinity;
+                for (const [k, v] of this.queryCache) { if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; } }
+                if (oldestKey) this.queryCache.delete(oldestKey);
+            }
+            this.queryCache.set(query, { vector, ts: Date.now() });
+            return vector;
+        } catch (err) {
+            debug('embeddings', `Failed to embed query: ${err}`);
+            return null;
+        }
+    }
+
+    async search(query: string, topK = 5, entityType?: EntityTypeName): Promise<EmbeddingSearchResult[]> {
+        const entries = Object.entries(this.store.entries);
+        if (entries.length === 0) return [];
+        const queryVector = await this.getQueryVector(query);
+        if (!queryVector) return [];
+
+        const results: EmbeddingSearchResult[] = [];
+        for (const [key, entry] of entries) {
+            if (entityType && !key.startsWith(`${entityType}:`)) continue;
+            const similarity = cosineSimilarity(queryVector, entry.vector);
+            if (similarity >= SIMILARITY_THRESHOLD) results.push({ key, similarity });
+        }
+        results.sort((a, b) => b.similarity - a.similarity);
+        return results.slice(0, topK);
+    }
+}
+
+// Singleton
+let _embeddingIndex: EmbeddingIndex | null = null;
+
+export function getEmbeddingIndex(): EmbeddingIndex {
+    if (!_embeddingIndex) _embeddingIndex = new EmbeddingIndex();
+    return _embeddingIndex;
+}
+
+export function resetEmbeddingIndex(): void {
+    _embeddingIndex = null;
+}

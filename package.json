@@ -1,0 +1,54 @@
+{
+  "name": "@phaibel/cxms",
+  "version": "2.0.0",
+  "description": "Phaibel Context Management System — storage, index, search, and context tree for Foundation entities",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    },
+    "./platform/types": {
+      "types": "./dist/platform/types.d.ts",
+      "import": "./dist/platform/types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "gray-matter": "^4.0.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clift-labs/phaibel-cxms.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "phaibel",
+    "cxms",
+    "context",
+    "foundation",
+    "entities"
+  ]
+}
