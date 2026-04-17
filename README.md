@@ -1,16 +1,16 @@
-# @phaibel/cxms
+# CxMS — Context Management System
 
-Context Management System — storage, index, search, and context tree for Foundation entities.
+CxMS gives AI agents structured, persistent memory. Instead of losing context between conversations or stuffing everything into a system prompt, agents store and retrieve knowledge through typed context nodes — tasks, events, notes, people, goals, and any custom type you define. Content is stored as human-readable Markdown files with YAML frontmatter, organized in a Foundation directory. CxMS provides full-text search (BM25 with stemming), a relationship graph between nodes, and a token-budgeted context tree that agents can use to load exactly the right information for a given query. It ships with both a REST API and an MCP tool server, so any agent framework can plug in.
 
-CxMS is a library that provides two API surfaces: a REST API (`/cx/*`) and an MCP tool server (`/mcp`). Your application mounts these on its own HTTP server.
+## Two Ways to Use CxMS
 
-## Install
+### Method 1: Embed in Your Project
+
+Install the package and mount the API and MCP server on your own HTTP server. This gives you full programmatic access to the CxMS internals alongside your application logic.
 
 ```bash
-npm install @phaibel/cxms
+npm install @gclift/cxms
 ```
-
-## Quick Start
 
 ```typescript
 import http from 'http';
@@ -23,7 +23,7 @@ import {
   handleMcpRoute,
   setAuthEnabled,
   getEntityIndex,
-} from '@phaibel/cxms';
+} from '@gclift/cxms';
 
 // 1. Initialize platform (Node.js)
 setPlatform(createNodePlatform());
@@ -63,6 +63,100 @@ server.listen(config.port || 3800, () => {
 });
 ```
 
+You can also use CxMS functions directly without the HTTP layer:
+
+```typescript
+import {
+  setPlatform, createNodePlatform, setFoundationRoot,
+  getEntityIndex, listEntities, searchEntities, writeEntity,
+  generateNodeId, ensureEntityDir, nodeFilename, loadEntityTypes,
+} from '@gclift/cxms';
+
+setPlatform(createNodePlatform());
+setFoundationRoot('/path/to/foundation');
+
+const index = getEntityIndex();
+await index.build();
+
+// Search for tasks
+const results = await searchEntities('quarterly review', 'task');
+
+// Create a node
+const id = generateNodeId();
+const dir = await ensureEntityDir('note');
+const filepath = `${dir}/${nodeFilename('Agent memory snapshot', id)}`;
+await writeEntity(filepath, {
+  id, title: 'Agent memory snapshot', entityType: 'note',
+  created: new Date().toISOString(), tags: ['agent', 'memory'],
+}, 'Key observations from today...');
+```
+
+### Method 2: Run Standalone
+
+Install globally and run CxMS as a headless server. Agents connect over HTTP (REST API) or MCP.
+
+```bash
+npm install -g @gclift/cxms
+
+# Initialize a Foundation in the current directory
+cxms init
+
+# Start the server
+cxms
+```
+
+```
+CxMS listening on http://localhost:3800
+  REST API:  http://localhost:3800/cx/health
+  MCP:       http://localhost:3800/mcp
+  Token:     cxms_a3b8f1...
+```
+
+**Connect an MCP client** (Claude Desktop, Cursor, or any MCP-compatible agent):
+
+```json
+{
+  "mcpServers": {
+    "cxms": {
+      "url": "http://localhost:3800/mcp"
+    }
+  }
+}
+```
+
+**Use the REST API** from any language or agent framework:
+
+```bash
+TOKEN=$(cxms token)
+
+# Create a task
+curl -X POST http://localhost:3800/cx/context-types/task \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Review Q3 report", "tags": ["work"], "status": "open"}'
+
+# Search across all nodes
+curl -X POST http://localhost:3800/cx/search \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "quarterly review"}'
+```
+
+**CLI options:**
+
+```
+cxms                              Start the server
+cxms init                         Initialize a Foundation in the current directory
+cxms token                        Print the bearer token
+cxms token --regenerate           Generate a new bearer token
+
+--port, -p <port>                 Port (default: 3800)
+--foundation, -f <path>           Foundation root directory
+--no-auth                         Disable bearer token authentication
+```
+
+---
+
 ## Configuration
 
 CxMS stores system config in `~/.cxms/`:
@@ -72,34 +166,26 @@ CxMS stores system config in `~/.cxms/`:
 | `config.json` | `{ foundationRoot?: string, port?: number }` |
 | `token` | Bearer token for API auth (auto-generated on first use) |
 
-```typescript
-import { loadSystemConfig, saveSystemConfig, loadBearerToken } from '@phaibel/cxms';
-
-// Read/write config
-const config = await loadSystemConfig();
-await saveSystemConfig({ foundationRoot: '/path/to/foundation', port: 3800 });
-
-// Get the bearer token (auto-generates if missing)
-const token = await loadBearerToken();
-```
-
 ## Authentication
 
 All REST endpoints except `GET /cx/health` require a bearer token:
 
 ```bash
-# Get your token
-cat ~/.cxms/token
-
-# Use it
-curl -H "Authorization: Bearer cxms_abc123..." http://localhost:3800/cx/context-types
+TOKEN=$(cxms token)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3800/cx/context-types
 ```
 
 Disable auth for local development:
 
 ```typescript
-import { setAuthEnabled } from '@phaibel/cxms';
+import { setAuthEnabled } from '@gclift/cxms';
 setAuthEnabled(false);
+```
+
+Or with the CLI:
+
+```bash
+cxms --no-auth
 ```
 
 ---
@@ -185,7 +271,7 @@ curl -X PUT http://localhost:3800/cx/context-types/task/abc123 \
 ### Search
 
 ```
-POST /cx/search                        — Full-text search (BM25 + optional semantic)
+POST /cx/search                        — Full-text search (BM25)
 GET  /cx/tag/:tag                      — Find nodes by tag
 GET  /cx/date                          — Today's calendar entries
 GET  /cx/date-range/:start/:end        — Date range query (YYYY-MM-DD)
@@ -211,29 +297,9 @@ GET /cx/collection/:name/count         — Count items
 
 ---
 
-## MCP Server
+## MCP Tools
 
-CxMS exposes an [MCP](https://modelcontextprotocol.io) tool server via Streamable HTTP transport. Any MCP client (Claude Desktop, Cursor, etc.) can connect.
-
-### Connecting
-
-Mount `handleMcpRoute` at `/mcp` on your HTTP server (see Quick Start above). The endpoint handles `POST`, `GET`, and `DELETE` methods.
-
-### Claude Desktop Configuration
-
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "cxms": {
-      "url": "http://localhost:3800/mcp"
-    }
-  }
-}
-```
-
-### Available Tools
+CxMS exposes an [MCP](https://modelcontextprotocol.io) tool server via Streamable HTTP transport at `/mcp`. Any MCP-compatible client can connect and use these tools:
 
 **Context Types**
 
@@ -293,9 +359,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 The `count_nodes` tool accepts a `query` parameter to show how many nodes in each type match search terms — useful for narrowing focus before a full search:
 
 ```json
-{
-  "query": "Bob"
-}
+{ "query": "Bob" }
 ```
 
 Returns:
@@ -384,13 +448,13 @@ Need to review before Friday standup.
 CxMS abstracts file I/O and path operations so it can run on Node.js, React Native, or any platform:
 
 ```typescript
-import { setPlatform, createNodePlatform } from '@phaibel/cxms';
+import { setPlatform, createNodePlatform } from '@gclift/cxms';
 
 // Node.js (default, auto-detected)
 setPlatform(createNodePlatform());
 
 // Custom platform
-import type { PlatformProvider } from '@phaibel/cxms/platform/types';
+import type { PlatformProvider } from '@gclift/cxms/platform/types';
 
 const myPlatform: PlatformProvider = {
   storage: { readFile, writeFile, readdir, mkdir, rename, access, unlink, appendFile, stat },
