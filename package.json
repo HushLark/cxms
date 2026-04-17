@@ -1,10 +1,13 @@
 {
   "name": "@gclift/cxms",
-  "version": "2.0.0",
-  "description": "Phaibel Context Management System — storage, index, search, and context tree for Foundation entities",
+  "version": "2.1.1",
+  "description": "Context Management System — storage, index, search, and context tree for Foundation entities",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "cxms": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
