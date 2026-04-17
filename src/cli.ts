@@ -29,8 +29,6 @@ import { handleCxRoute } from './server/cx-router.js';
 import { handleMcpRoute } from './server/mcp-server.js';
 import { setAuthEnabled } from './server/auth.js';
 import { getEntityIndex } from './index/entity-index.js';
-import { loadEntityTypes } from './schema/entity-type-config.js';
-import { writeAllContextTypes } from './schema/context-type-store.js';
 import { FOUNDATION_MARKER } from './types.js';
 
 const DEFAULT_PORT = 3800;
@@ -130,19 +128,6 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
         await fs.mkdir(path.join(cwd, dir), { recursive: true });
     }
 
-    // Seed default context types
-    setPlatform(createNodePlatform());
-    setFoundationRoot(cwd);
-    const entityTypes = await loadEntityTypes();
-    const contextTypes = entityTypes.map(t => ({
-        ...t,
-        directory: `context-types/${t.name}`,
-    }));
-    await writeAllContextTypes(contextTypes);
-    for (const t of contextTypes) {
-        await fs.mkdir(path.join(cwd, t.directory), { recursive: true });
-    }
-
     // Save to system config
     await saveSystemConfig({ ...(await loadSystemConfig()), foundationRoot: cwd });
 
@@ -150,12 +135,10 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
     console.log(`\nCreated:`);
     console.log(`  ${FOUNDATION_MARKER}        Root context`);
     console.log(`  context-types/       Context type schemas`);
-    for (const t of contextTypes) {
-        console.log(`    ${t.name}/`);
-    }
     console.log(`  collections/         Key-value collections`);
     console.log(`  logs/                Access & error logs`);
-    console.log(`\nStart the server with: cxms`);
+    console.log(`\nNo context types created — add them via the API or MCP.`);
+    console.log(`Start the server with: cxms`);
 }
 
 async function cmdToken(regenerate: boolean): Promise<void> {

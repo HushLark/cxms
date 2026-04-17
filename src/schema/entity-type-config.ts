@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getPlatform } from '../platform/index.js';
-import { DEFAULT_ENTITY_TYPES, BUILT_IN_TYPE_NAMES } from './entity-types-defaults.js';
+import { BUILT_IN_TYPE_NAMES } from './entity-types-defaults.js';
 import { debug } from '../debug.js';
 import { getEntityTypesPath, getVaultConfigDir, getFoundationDir } from '../paths.js';
 import { getFoundationRoot } from '../foundation.js';
@@ -90,49 +90,11 @@ export async function loadEntityTypes(): Promise<EntityTypeConfig[]> {
         if (!Array.isArray(parsed.entityTypes)) {
             throw new Error('entity-types.json missing entityTypes array');
         }
-        const defaultsByName = new Map(DEFAULT_ENTITY_TYPES.map(d => [d.name, d]));
-        let dirty = false;
-        for (const saved of parsed.entityTypes) {
-            const builtin = defaultsByName.get(saved.name);
-            if (!builtin) continue;
-            if (saved.calendarDateField === undefined && builtin.calendarDateField) {
-                saved.calendarDateField = builtin.calendarDateField;
-                dirty = true;
-            }
-            if (saved.completionField === undefined && builtin.completionField) {
-                saved.completionField = builtin.completionField;
-                saved.completionValue = builtin.completionValue;
-                dirty = true;
-            }
-            if (saved.spawner === undefined && builtin.spawner) {
-                saved.spawner = builtin.spawner;
-                dirty = true;
-            }
-            const builtinFields = new Map(builtin.fields.map(f => [f.key, f]));
-            for (const savedField of saved.fields) {
-                const builtinField = builtinFields.get(savedField.key);
-                if (builtinField && savedField.type !== builtinField.type) {
-                    savedField.type = builtinField.type;
-                    dirty = true;
-                }
-                if (builtinField && savedField.label !== builtinField.label) {
-                    savedField.label = builtinField.label;
-                    dirty = true;
-                }
-                if (builtinField && savedField.required !== builtinField.required) {
-                    savedField.required = builtinField.required;
-                    dirty = true;
-                }
-            }
-        }
-        if (dirty) {
-            await saveEntityTypes(parsed.entityTypes);
-        }
         _cache = parsed.entityTypes;
         return _cache;
     } catch (err) {
-        debug('entity-types', `Using built-in defaults: ${err}`);
-        _cache = DEFAULT_ENTITY_TYPES;
+        debug('entity-types', `No entity-types.json found: ${err}`);
+        _cache = [];
         return _cache;
     }
 }
@@ -153,8 +115,8 @@ export async function initEntityTypes(): Promise<void> {
         await getPlatform().storage.access(typesPath);
         debug('entity-types', 'entity-types.json already exists — skipping init');
     } catch {
-        await saveEntityTypes(DEFAULT_ENTITY_TYPES);
-        debug('entity-types', `Created entity-types.json`);
+        await saveEntityTypes([]);
+        debug('entity-types', 'Created empty entity-types.json');
     }
 }
 
@@ -246,9 +208,6 @@ export async function updateEntityType(name: string, config: EntityTypeConfig): 
 }
 
 export async function removeEntityType(name: string): Promise<void> {
-    if (BUILT_IN_TYPE_NAMES.has(name)) {
-        throw new Error(`"${name}" is a built-in type and cannot be removed.`);
-    }
     const types = await loadEntityTypes();
     const filtered = types.filter(t => t.name !== name);
     if (filtered.length === types.length) throw new Error(`Entity type "${name}" not found.`);

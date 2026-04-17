@@ -21,7 +21,6 @@ import { debug } from '../debug.js';
 import { generateNodeId, slugify, nodeFilename } from '../storage/entity.js';
 import { writeContextType, writeMappingIndex } from '../schema/context-type-store.js';
 import type { EntityTypeConfig } from '../schema/entity-type-config.js';
-import { DEFAULT_ENTITY_TYPES } from '../schema/entity-types-defaults.js';
 
 const MIGRATION_MARKER = '.v5-migrated';
 
@@ -194,8 +193,8 @@ async function migrateEntityTypes(root: string): Promise<EntityTypeConfig[]> {
         const parsed = JSON.parse(raw);
         types = parsed.entityTypes ?? parsed;
     } catch {
-        debug('migrate', 'No entity-types.json — using defaults');
-        types = [...DEFAULT_ENTITY_TYPES];
+        debug('migrate', 'No entity-types.json found');
+        types = [];
     }
 
     for (const t of types) {
