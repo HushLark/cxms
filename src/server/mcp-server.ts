@@ -11,7 +11,7 @@
 //   Context:        get_node_summary, count_nodes, get_moment, get_context_tree
 //   Collections:    list_collections, get_collection, set_collection_item,
 //                   remove_collection_item
-//   System:         health
+//   System:         health, get_analytics
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -63,6 +63,7 @@ import { buildContextTree, type ContextScope } from '../context/context-tree.js'
 import { serializeContextTree } from '../context/context-tree-serializer.js';
 import { getVaultContext, getSubdirectoryContext } from '../context/reader.js';
 import { getPlatform } from '../platform/index.js';
+import { getVaultAnalytics } from '../analytics.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,17 @@ function registerTools(server: McpServer): void {
                     contextTypes: types.length,
                     index: stats ? { nodes: stats.nodeCount, edges: stats.edgeCount } : null,
                 });
+            } catch (e) { return err(e); }
+        },
+    );
+
+    server.tool(
+        'get_analytics',
+        'Get vault analytics: disk usage (total bytes, formatted), file counts, trash size, and node count per context type.',
+        {},
+        async () => {
+            try {
+                return ok(await getVaultAnalytics());
             } catch (e) { return err(e); }
         },
     );

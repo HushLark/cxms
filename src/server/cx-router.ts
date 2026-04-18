@@ -49,6 +49,7 @@ import {
     readBody,
 } from './problem-details.js';
 import { findFoundationRoot } from '../foundation.js';
+import { getVaultAnalytics } from '../analytics.js';
 import { authenticateRequest } from './auth.js';
 import { logAccess } from '../log/access-log.js';
 import { logError } from '../log/error-log.js';
@@ -100,6 +101,11 @@ async function routeRequest(
 
         // All other routes require authentication
         if (!await authenticateRequest(req, res)) return true;
+
+        // GET /cx/analytics
+        if (pathname === '/cx/analytics' && method === 'GET') {
+            return await handleAnalytics(res);
+        }
 
         // POST /cx/search
         if (pathname === '/cx/search' && method === 'POST') {
@@ -214,6 +220,14 @@ async function handleHealth(res: http.ServerResponse): Promise<boolean> {
         foundation: root || null,
         contextTypes: types.length,
     });
+    return true;
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+
+async function handleAnalytics(res: http.ServerResponse): Promise<boolean> {
+    const analytics = await getVaultAnalytics();
+    jsonResponse(res, 200, analytics);
     return true;
 }
 
