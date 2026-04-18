@@ -6,6 +6,9 @@ cd "$(dirname "$0")"
 echo "── Build ──"
 npm run build
 
+echo "── Test ──"
+node test/analytics.test.mjs
+
 echo "── Bump patch version ──"
 NEW_VERSION=$(node -p "
   const pkg = require('./package.json');

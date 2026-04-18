@@ -2,6 +2,19 @@
 
 CxMS gives AI agents structured, persistent memory. Agents store and retrieve knowledge through typed **context nodes** — tasks, events, notes, people, goals, and any custom type you define. Content lives as human-readable Markdown files with YAML frontmatter in a **Foundation** directory on disk. CxMS provides BM25 full-text search with Porter stemming, a relationship graph between nodes, token-budgeted context trees for LLM consumption, vault analytics, and both a REST API and an MCP tool server so any agent framework can plug in.
 
+## Documentation
+
+| Page | Description |
+|------|-------------|
+| [How It Works](docs/how-it-works.md) | Architecture, data model, layers, and internals |
+| [Foundation](docs/foundation.md) | Foundation directory structure and context files |
+| [Context Types](docs/context-types.md) | Schema system, field types, and type management |
+| [REST API](docs/rest-api.md) | Complete REST endpoint reference with examples |
+| [MCP Tools](docs/mcp-tools.md) | All MCP tools with parameters and usage |
+| [Search & Context](docs/search-and-context.md) | BM25 search, context trees, analytics, and real-time context |
+
+---
+
 ## Highlights
 
 - **Schema-first** — define typed context types with field validation before writing a single node
@@ -137,19 +150,6 @@ cxms token --regenerate           Regenerate the bearer token
 ```
 
 System config lives in `~/.cxms/config.json` — `{ "foundationRoot": "...", "port": 3800 }`.
-
----
-
-## Documentation
-
-| Page | Description |
-|------|-------------|
-| [How It Works](docs/how-it-works.md) | Architecture, data model, layers, and internals |
-| [Foundation](docs/foundation.md) | Foundation directory structure and context files |
-| [Context Types](docs/context-types.md) | Schema system, field types, and type management |
-| [REST API](docs/rest-api.md) | Complete REST endpoint reference with examples |
-| [MCP Tools](docs/mcp-tools.md) | All MCP tools with parameters and usage |
-| [Search & Context](docs/search-and-context.md) | BM25 search, context trees, analytics, and real-time context |
 
 ---
 
