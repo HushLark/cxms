@@ -270,6 +270,7 @@ export async function runInteractiveInterview(): Promise<OnboardingAnswers> {
                 { value: 'friend',     label: 'Friend',     hint: 'warm, casual, encouraging' },
                 { value: 'executive',  label: 'Executive',  hint: 'sharp, professional, results-focused' },
                 { value: 'rockstar',   label: 'Rockstar',   hint: 'high-energy, fun, enthusiastic' },
+                { value: 'model',      label: 'European Male Model', hint: 'effortlessly charming, smouldering, impossibly stylish' },
             ],
             'friend',
         );

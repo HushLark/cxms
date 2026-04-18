@@ -15,7 +15,7 @@ export type UserRole =
 export type CommunicationStyle = 'brief' | 'conversational' | 'structured';
 
 /** Agent personality chosen during onboarding. */
-export type AgentPersonality = 'butler' | 'rockstar' | 'executive' | 'friend';
+export type AgentPersonality = 'butler' | 'rockstar' | 'executive' | 'friend' | 'model';
 
 /**
  * Collected answers from the onboarding interview.
