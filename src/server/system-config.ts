@@ -20,6 +20,32 @@ export interface CxmsConfig {
     foundationRoot?: string;
     /** Port for the CxMS HTTP server */
     port?: number;
+    /** Display name for this CxMS instance */
+    name?: string;
+    /** Description of this CxMS instance's purpose */
+    description?: string;
+}
+
+// ── Instance identity ─────────────────────────────────────────────────────────
+
+const DEFAULT_INSTANCE_NAME = 'Main';
+const DEFAULT_INSTANCE_DESCRIPTION = 'The main Context Management System';
+
+let _instanceName: string = DEFAULT_INSTANCE_NAME;
+let _instanceDescription: string = DEFAULT_INSTANCE_DESCRIPTION;
+
+export function setInstanceIdentity(name: string, description: string): void {
+    _instanceName = name;
+    _instanceDescription = description;
+}
+
+export function getInstanceIdentity(): { name: string; description: string } {
+    return { name: _instanceName, description: _instanceDescription };
+}
+
+export function resetInstanceIdentity(): void {
+    _instanceName = DEFAULT_INSTANCE_NAME;
+    _instanceDescription = DEFAULT_INSTANCE_DESCRIPTION;
 }
 
 /**
@@ -106,6 +132,12 @@ export async function initFromSystemConfig(): Promise<CxmsConfig> {
     if (config.foundationRoot) {
         setFoundationRoot(config.foundationRoot);
         debug('system-config', `Foundation root set to ${config.foundationRoot}`);
+    }
+    if (config.name || config.description) {
+        setInstanceIdentity(
+            config.name ?? DEFAULT_INSTANCE_NAME,
+            config.description ?? DEFAULT_INSTANCE_DESCRIPTION,
+        );
     }
     return config;
 }

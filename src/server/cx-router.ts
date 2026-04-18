@@ -51,6 +51,8 @@ import {
 import { findFoundationRoot } from '../foundation.js';
 import { getVaultAnalytics } from '../analytics.js';
 import { authenticateRequest } from './auth.js';
+import { getInstanceIdentity } from './system-config.js';
+import { runOnboarding, getOnboardingStatus } from '../onboarding/index.js';
 import { logAccess } from '../log/access-log.js';
 import { logError } from '../log/error-log.js';
 import { debug } from '../debug.js';
@@ -107,9 +109,24 @@ async function routeRequest(
             return await handleAnalytics(res);
         }
 
+        // POST /cx/onboard
+        if (pathname === '/cx/onboard' && method === 'POST') {
+            return await handleOnboard(req, res);
+        }
+
+        // GET /cx/onboard/status
+        if (pathname === '/cx/onboard/status' && method === 'GET') {
+            return await handleOnboardStatus(res);
+        }
+
         // POST /cx/search
         if (pathname === '/cx/search' && method === 'POST') {
             return await handleSearch(req, res);
+        }
+
+        // POST /cx/nodes/batch
+        if (pathname === '/cx/nodes/batch' && method === 'POST') {
+            return await handleBatchGetNodes(req, res);
         }
 
         // GET /cx/tag/{tag}
@@ -215,8 +232,11 @@ async function routeRequest(
 async function handleHealth(res: http.ServerResponse): Promise<boolean> {
     const root = findFoundationRoot();
     const types = await loadEntityTypes();
+    const { name, description } = getInstanceIdentity();
     jsonResponse(res, 200, {
         status: root ? 'ok' : 'no-foundation',
+        name,
+        description,
         foundation: root || null,
         contextTypes: types.length,
     });
@@ -231,11 +251,38 @@ async function handleAnalytics(res: http.ServerResponse): Promise<boolean> {
     return true;
 }
 
+// ── Onboarding ───────────────────────────────────────────────────────────────
+
+async function handleOnboard(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    const raw = await readBody(req);
+    let body: { answers?: unknown; foundationDir?: string };
+    try { body = JSON.parse(raw || '{}'); } catch {
+        badRequest(res, 'Invalid JSON', '/cx/onboard'); return true;
+    }
+    if (!body.answers) { badRequest(res, 'Missing required field: answers', '/cx/onboard'); return true; }
+    const root = findFoundationRoot();
+    const foundationDir = body.foundationDir || root;
+    if (!foundationDir) { badRequest(res, 'No foundation root — pass foundationDir or set one up', '/cx/onboard'); return true; }
+    try {
+        const result = await runOnboarding(body.answers as Parameters<typeof runOnboarding>[0], foundationDir);
+        jsonResponse(res, 200, result);
+    } catch (e) {
+        serverError(res, e instanceof Error ? e.message : String(e), '/cx/onboard');
+    }
+    return true;
+}
+
+async function handleOnboardStatus(res: http.ServerResponse): Promise<boolean> {
+    const status = await getOnboardingStatus();
+    jsonResponse(res, 200, status);
+    return true;
+}
+
 // ── Search ───────────────────────────────────────────────────────────────────
 
 async function handleSearch(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
     const raw = await readBody(req);
-    let body: { query?: string; type?: string; tags?: string[] };
+    let body: { query?: string; type?: string; tags?: string[]; snippetLength?: number };
     try {
         body = JSON.parse(raw || '{}');
     } catch {
@@ -248,19 +295,98 @@ async function handleSearch(req: http.IncomingMessage, res: http.ServerResponse)
         return true;
     }
 
+    const snippetLength = Math.min(body.snippetLength ?? 200, 500);
     const results = await searchEntities(body.query, body.type, { tags: body.tags });
+
+    // Pre-load type configs for custom field extraction
+    const allTypes = await loadEntityTypes();
+    const typeConfigMap = new Map(allTypes.map(t => [t.name, t]));
+
     jsonResponse(res, 200, {
         query: body.query,
         count: results.length,
-        results: results.map(r => ({
-            id: r.meta.id,
-            title: r.meta.title,
-            type: r.meta.entityType || r.meta.contextType,
-            score: r.score,
-            tags: r.meta.tags,
-            summary: r.meta.summary,
-        })),
+        results: results.map(r => {
+            const typeName = String(r.meta.entityType || r.meta.contextType || '');
+            const typeConfig = typeConfigMap.get(typeName);
+            const fields = typeConfig ? extractCustomFields(r.meta, typeConfig) : {};
+            const snippet = r.content?.slice(0, snippetLength).replace(/\n+/g, ' ').trim() || '';
+            return {
+                id: r.meta.id,
+                title: r.meta.title,
+                type: typeName,
+                score: r.score,
+                tags: r.meta.tags,
+                summary: r.meta.summary,
+                fields,
+                bodySnippet: snippet,
+            };
+        }),
     });
+    return true;
+}
+
+// ── Batch Node Fetch ──────────────────────────────────────────────────────────
+
+async function handleBatchGetNodes(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    const raw = await readBody(req);
+    let body: { nodes?: Array<{ type: string; id: string }> };
+    try {
+        body = JSON.parse(raw || '{}');
+    } catch {
+        badRequest(res, 'Invalid JSON body');
+        return true;
+    }
+
+    if (!Array.isArray(body.nodes) || body.nodes.length === 0) {
+        badRequest(res, 'Missing required field: nodes (array of {type, id})');
+        return true;
+    }
+
+    if (body.nodes.length > 50) {
+        badRequest(res, 'Batch size limit is 50 nodes');
+        return true;
+    }
+
+    const allTypes = await loadEntityTypes();
+    const typeConfigMap = new Map(allTypes.map(t => [t.name, t]));
+    const results: Array<Record<string, unknown>> = [];
+    const errors: Array<{ type: string; id: string; error: string }> = [];
+
+    for (const ref of body.nodes) {
+        if (!ref.type || !ref.id) {
+            errors.push({ type: ref.type || '', id: ref.id || '', error: 'Missing type or id' });
+            continue;
+        }
+        const typeConfig = typeConfigMap.get(ref.type);
+        if (!typeConfig) {
+            errors.push({ type: ref.type, id: ref.id, error: `Unknown type "${ref.type}"` });
+            continue;
+        }
+        try {
+            const entities = await listEntities(ref.type);
+            const entity = entities.find(e => e.meta.id === ref.id);
+            if (!entity) {
+                errors.push({ type: ref.type, id: ref.id, error: 'Not found' });
+                continue;
+            }
+            results.push({
+                id: entity.meta.id,
+                title: entity.meta.title,
+                type: ref.type,
+                tags: entity.meta.tags || [],
+                summary: entity.meta.summary,
+                created: entity.meta.created,
+                updated: entity.meta.updated,
+                ...extractCustomFields(entity.meta, typeConfig),
+                content: entity.content,
+                references: entity.meta.references || entity.meta.links || [],
+            });
+        } catch (err) {
+            errors.push({ type: ref.type, id: ref.id, error: err instanceof Error ? err.message : String(err) });
+        }
+    }
+
+    jsonResponse(res, 200, { count: results.length, nodes: results, errors });
     return true;
 }
 

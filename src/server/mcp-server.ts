@@ -7,11 +7,11 @@
 // Tools:
 //   Context Types:  list_types, get_type, create_type, update_type, delete_type
 //   Context Nodes:  list_nodes, get_node, create_node, update_node, delete_node
-//   Search:         search, search_by_tag, search_by_date_range
+//   Search:         search, batch_get_nodes, search_by_tag, search_by_date_range
 //   Context:        get_node_summary, count_nodes, get_moment, get_context_tree
 //   Collections:    list_collections, get_collection, set_collection_item,
 //                   remove_collection_item
-//   System:         health, get_analytics
+//   System:         health, get_analytics, onboard_status
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -19,6 +19,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import type http from 'http';
 import { findFoundationRoot } from '../foundation.js';
+import { getInstanceIdentity } from './system-config.js';
 import { debug } from '../debug.js';
 
 // Schema
@@ -64,6 +65,7 @@ import { serializeContextTree } from '../context/context-tree-serializer.js';
 import { getVaultContext, getSubdirectoryContext } from '../context/reader.js';
 import { getPlatform } from '../platform/index.js';
 import { getVaultAnalytics } from '../analytics.js';
+import { getOnboardingStatus } from '../onboarding/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -104,8 +106,11 @@ function registerTools(server: McpServer): void {
                 const types = await loadEntityTypes();
                 const index = getEntityIndex();
                 const stats = index.isBuilt ? index.getStats() : null;
+                const { name, description } = getInstanceIdentity();
                 return ok({
                     status: root ? 'ok' : 'no_foundation',
+                    name,
+                    description,
                     foundation: root,
                     contextTypes: types.length,
                     index: stats ? { nodes: stats.nodeCount, edges: stats.edgeCount } : null,
@@ -121,6 +126,17 @@ function registerTools(server: McpServer): void {
         async () => {
             try {
                 return ok(await getVaultAnalytics());
+            } catch (e) { return err(e); }
+        },
+    );
+
+    server.tool(
+        'onboard_status',
+        'Check whether this Foundation has been onboarded — returns completion status, user name, agent name, and role.',
+        {},
+        async () => {
+            try {
+                return ok(await getOnboardingStatus());
             } catch (e) { return err(e); }
         },
     );
@@ -404,24 +420,80 @@ function registerTools(server: McpServer): void {
 
     server.tool(
         'search',
-        'Full-text search across context nodes. Returns ranked results with scores.',
+        'Full-text BM25 search across context nodes. Returns ranked previews: title, tags, summary, key custom fields, and a body snippet. Use batch_get_nodes to fetch full content for selected results.',
         {
-            query: z.string().describe('Search query'),
-            type: z.string().optional().describe('Filter to context type'),
+            query: z.string().describe('Search query — keywords, phrases, or tag:value filters'),
+            type: z.string().optional().describe('Filter to a single context type'),
             limit: z.number().optional().describe('Max results (default 20)'),
+            snippetLength: z.number().optional().describe('Body preview length in chars (default 200, max 500)'),
         },
-        async ({ query, type, limit }) => {
+        async ({ query, type, limit, snippetLength }) => {
             try {
                 const results = await searchEntities(query, type);
                 const top = results.slice(0, limit || 20);
-                return ok(top.map(r => ({
-                    type: r.meta.entityType as string,
-                    id: r.meta.id as string,
-                    title: r.meta.title as string,
-                    score: r.score,
-                    summary: r.meta.summary as string | undefined,
-                    tags: r.meta.tags as string[],
-                })));
+                const allTypes = await loadEntityTypes();
+                const typeConfigMap = new Map(allTypes.map(t => [t.name, t]));
+                const snipLen = Math.min(snippetLength ?? 200, 500);
+                return ok(top.map(r => {
+                    const typeName = (r.meta.entityType || r.meta.contextType) as string;
+                    const typeConfig = typeConfigMap.get(typeName);
+                    const fields: Record<string, unknown> = {};
+                    if (typeConfig) {
+                        for (const f of typeConfig.fields) {
+                            if (r.meta[f.key] !== undefined) fields[f.key] = r.meta[f.key];
+                        }
+                    }
+                    return {
+                        type: typeName,
+                        id: r.meta.id as string,
+                        title: r.meta.title as string,
+                        score: r.score,
+                        summary: r.meta.summary as string | undefined,
+                        tags: r.meta.tags as string[],
+                        fields,
+                        bodySnippet: r.content?.slice(0, snipLen).replace(/\n+/g, ' ').trim() || '',
+                    };
+                }));
+            } catch (e) { return err(e); }
+        },
+    );
+
+    server.tool(
+        'batch_get_nodes',
+        'Fetch full content for multiple nodes in one call. Use after search to retrieve only the nodes the agent has selected as relevant. Limit: 50 nodes per request.',
+        {
+            nodes: z.array(z.object({
+                type: z.string().describe('Context type name'),
+                id: z.string().describe('Node ID'),
+            })).describe('List of nodes to fetch'),
+        },
+        async ({ nodes }) => {
+            try {
+                const allTypes = await loadEntityTypes();
+                const typeConfigMap = new Map(allTypes.map(t => [t.name, t]));
+                const results: Array<Record<string, unknown>> = [];
+                const errors: Array<{ type: string; id: string; error: string }> = [];
+                for (const ref of nodes.slice(0, 50)) {
+                    const typeConfig = typeConfigMap.get(ref.type);
+                    if (!typeConfig) { errors.push({ ...ref, error: `Unknown type "${ref.type}"` }); continue; }
+                    try {
+                        const entities = await listEntities(ref.type);
+                        const entity = entities.find(e => e.meta.id === ref.id);
+                        if (!entity) { errors.push({ ...ref, error: 'Not found' }); continue; }
+                        const fields: Record<string, unknown> = {};
+                        for (const f of typeConfig.fields) {
+                            if (entity.meta[f.key] !== undefined) fields[f.key] = entity.meta[f.key];
+                        }
+                        results.push({
+                            id: entity.meta.id, title: entity.meta.title, type: ref.type,
+                            tags: entity.meta.tags || [], summary: entity.meta.summary,
+                            created: entity.meta.created, updated: entity.meta.updated,
+                            ...fields, content: entity.content,
+                            references: entity.meta.references || entity.meta.links || [],
+                        });
+                    } catch (e) { errors.push({ ...ref, error: e instanceof Error ? e.message : String(e) }); }
+                }
+                return ok({ count: results.length, nodes: results, errors });
             } catch (e) { return err(e); }
         },
     );

@@ -18,12 +18,15 @@ import path from 'path';
 import { setPlatform } from './platform/index.js';
 import { createNodePlatform } from './platform/node.js';
 import { setFoundationRoot, findFoundationRoot } from './foundation.js';
+import { runInteractiveInterview, runOnboarding, getOnboardingStatus } from './onboarding/index.js';
 import {
     initFromSystemConfig,
     saveSystemConfig,
     loadBearerToken,
     regenerateToken,
     loadSystemConfig,
+    setInstanceIdentity,
+    getInstanceIdentity,
 } from './server/system-config.js';
 import { handleCxRoute } from './server/cx-router.js';
 import { handleMcpRoute } from './server/mcp-server.js';
@@ -41,18 +44,24 @@ function parseArgs(argv: string[]): {
     foundation?: string;
     noAuth: boolean;
     regenerate: boolean;
+    name?: string;
+    description?: string;
 } {
     const args = argv.slice(2);
     const result: ReturnType<typeof parseArgs> = { noAuth: false, regenerate: false };
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (arg === 'init' || arg === 'token') {
+        if (arg === 'init' || arg === 'token' || arg === 'onboard') {
             result.command = arg;
         } else if (arg === '--port' || arg === '-p') {
             result.port = parseInt(args[++i], 10);
         } else if (arg === '--foundation' || arg === '-f') {
             result.foundation = args[++i];
+        } else if (arg === '--name' || arg === '-n') {
+            result.name = args[++i];
+        } else if (arg === '--description' || arg === '-d') {
+            result.description = args[++i];
         } else if (arg === '--no-auth') {
             result.noAuth = true;
         } else if (arg === '--regenerate') {
@@ -73,12 +82,15 @@ cxms — Context Management System server
 Usage:
   cxms                              Start the server
   cxms init                         Initialize a Foundation in the current directory
+  cxms onboard                      Run the first-time setup interview
   cxms token                        Print the bearer token
   cxms token --regenerate           Generate a new bearer token
 
 Options:
   --port, -p <port>                 Port to listen on (default: 3800)
   --foundation, -f <path>           Foundation root directory
+  --name, -n <name>                 Instance name (default: Main)
+  --description, -d <text>          Instance description
   --no-auth                         Disable bearer token authentication
   --help, -h                        Show this help
 
@@ -141,6 +153,35 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
     console.log(`Start the server with: cxms`);
 }
 
+async function cmdOnboard(): Promise<void> {
+    setPlatform(createNodePlatform());
+
+    const cwd = process.cwd();
+
+    // Check existing status
+    const existing = await getOnboardingStatus();
+    if (existing.complete) {
+        console.log(`\nFoundation already set up for ${existing.userName} (${existing.role}).`);
+        console.log(`Agent: ${existing.agentName}`);
+        console.log(`\nRe-run with a fresh Foundation directory to start over.`);
+        return;
+    }
+
+    // Run interview
+    const answers = await runInteractiveInterview();
+
+    // Determine Foundation directory (use current or configured)
+    const foundationDir = findFoundationRoot() || cwd;
+
+    // Run onboarding
+    const result = await runOnboarding(answers, foundationDir);
+
+    console.log(`\n  Context types created: ${result.typesCreated.join(', ') || 'none (already existed)'}`);
+    console.log(`  Profiles written:      ${result.profilesWritten.join(', ')}`);
+    console.log(`\n  Foundation: ${result.foundationPath}`);
+    console.log(`\n  Start the server: cxms --foundation ${result.foundationPath}\n`);
+}
+
 async function cmdToken(regenerate: boolean): Promise<void> {
     setPlatform(createNodePlatform());
     if (regenerate) {
@@ -158,6 +199,8 @@ async function startServer(opts: {
     port?: number;
     foundation?: string;
     noAuth: boolean;
+    name?: string;
+    description?: string;
 }): Promise<void> {
     setPlatform(createNodePlatform());
 
@@ -170,6 +213,12 @@ async function startServer(opts: {
     }
     if (opts.noAuth) {
         setAuthEnabled(false);
+    }
+    if (opts.name || opts.description) {
+        setInstanceIdentity(
+            opts.name ?? config.name ?? 'Main',
+            opts.description ?? config.description ?? 'The main Context Management System',
+        );
     }
 
     const port = opts.port || config.port || DEFAULT_PORT;
@@ -234,8 +283,11 @@ async function startServer(opts: {
         res.end(JSON.stringify({ error: 'Not found' }));
     });
 
+    const { name: instanceName, description: instanceDescription } = getInstanceIdentity();
     server.listen(port, () => {
-        console.log(`\nCxMS listening on http://localhost:${port}`);
+        console.log(`\nCxMS — ${instanceName}`);
+        console.log(`  ${instanceDescription}`);
+        console.log(`\nListening on http://localhost:${port}`);
         console.log(`  REST API:  http://localhost:${port}/cx/health`);
         console.log(`  MCP:       http://localhost:${port}/mcp`);
         if (token) {
@@ -260,6 +312,8 @@ const opts = parseArgs(process.argv);
 
 if (opts.command === 'init') {
     cmdInit().catch(err => { console.error(err); process.exit(1); });
+} else if (opts.command === 'onboard') {
+    cmdOnboard().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'token') {
     cmdToken(opts.regenerate).catch(err => { console.error(err); process.exit(1); });
 } else {

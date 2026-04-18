@@ -162,6 +162,9 @@ export {
     loadBearerToken,
     regenerateToken,
     initFromSystemConfig,
+    setInstanceIdentity,
+    getInstanceIdentity,
+    resetInstanceIdentity,
 } from './server/system-config.js';
 
 // ── Log ──────────────────────────────────────────────────────────────────────
@@ -171,6 +174,25 @@ export { logError } from './log/error-log.js';
 // ── Migration ────────────────────────────────────────────────────────────────
 export type { ProfileMigrationCallback } from './migration/auto-migrate.js';
 export { autoMigrateV4ToV5, setProfileMigrator } from './migration/auto-migrate.js';
+
+// ── Onboarding ───────────────────────────────────────────────────────────────
+export type {
+    UserRole,
+    CommunicationStyle,
+    AgentPersonality,
+    OnboardingAnswers,
+    UserProfileDoc,
+    AgentProfileDoc,
+    OnboardingStatus,
+    OnboardingResult,
+} from './onboarding/index.js';
+export {
+    getStarterTypes,
+    createFoundationIfNeeded,
+    runOnboarding,
+    getOnboardingStatus,
+    runInteractiveInterview,
+} from './onboarding/index.js';
 
 // ── Debug ────────────────────────────────────────────────────────────────────
 export { debug } from './debug.js';

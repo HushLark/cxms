@@ -12,6 +12,7 @@ CxMS gives AI agents structured, persistent memory. Agents store and retrieve kn
 | [REST API](docs/rest-api.md) | Complete REST endpoint reference with examples |
 | [MCP Tools](docs/mcp-tools.md) | All MCP tools with parameters and usage |
 | [Search & Context](docs/search-and-context.md) | BM25 search, context trees, analytics, and real-time context |
+| [Preview-then-Retrieve](docs/preview-retrieve-protocol.md) | Token-efficient retrieval protocol for single and federated CxMS |
 
 ---
 
