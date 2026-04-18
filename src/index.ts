@@ -60,6 +60,7 @@ export {
     addEntityType,
     updateEntityType,
     removeEntityType,
+    invalidateCache as invalidateEntityTypeCache,
 } from './schema/entity-type-config.js';
 export { DEFAULT_ENTITY_TYPES, BUILT_IN_TYPE_NAMES } from './schema/entity-types-defaults.js';
 export {
