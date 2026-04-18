@@ -271,6 +271,7 @@ export async function runInteractiveInterview(): Promise<OnboardingAnswers> {
                 { value: 'executive',  label: 'Executive',  hint: 'sharp, professional, results-focused' },
                 { value: 'rockstar',   label: 'Rockstar',   hint: 'high-energy, fun, enthusiastic' },
                 { value: 'model',      label: 'European Male Model', hint: 'effortlessly charming, smouldering, impossibly stylish' },
+                { value: 'pip',        label: 'Pip',                hint: 'devoted house helper, speaks in third person, overcome with joy to assist' },
             ],
             'friend',
         );
