@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-// cxms — Headless CxMS server
+// cxms / phaibel — Context Management System + Phaibel personal agent
 // ─────────────────────────────────────────────────────────────────────────────
-// Usage:
+// Usage (cxms):
 //   cxms                          Start with config from ~/.cxms/config.json
 //   cxms --port 4000              Override port
 //   cxms --foundation /path/to/f  Override foundation root
 //   cxms --no-auth                Disable bearer token authentication
 //   cxms init                     Initialize a new Foundation in the current directory
+//   cxms onboard                  Run the first-time setup interview
 //   cxms token                    Print the bearer token
 //   cxms token --regenerate       Generate a new bearer token
+//
+// Usage (phaibel):
+//   phaibel init                  First-time setup — choose vault location + interview
+//   phaibel                       Start the CxMS server (same as cxms)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import http from 'http';
@@ -35,6 +40,7 @@ import { getEntityIndex } from './index/entity-index.js';
 import { FOUNDATION_MARKER } from './types.js';
 
 const DEFAULT_PORT = 3800;
+const IS_PHAIBEL = path.basename(process.argv[1] || '').startsWith('phaibel');
 
 // ── Arg parsing ─────────────────────────────────────────────────────────────
 
@@ -52,7 +58,7 @@ function parseArgs(argv: string[]): {
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (arg === 'init' || arg === 'token' || arg === 'onboard') {
+        if (arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'phaibel-init') {
             result.command = arg;
         } else if (arg === '--port' || arg === '-p') {
             result.port = parseInt(args[++i], 10);
@@ -76,7 +82,24 @@ function parseArgs(argv: string[]): {
 }
 
 function printHelp(): void {
-    console.log(`
+    if (IS_PHAIBEL) {
+        console.log(`
+phaibel — Personal AI agent powered by CxMS
+
+Usage:
+  phaibel init                      First-time setup — choose vault location + interview
+  phaibel                           Start the CxMS server
+  phaibel token                     Print the bearer token
+  phaibel token --regenerate        Generate a new bearer token
+
+Options:
+  --port, -p <port>                 Port to listen on (default: 3800)
+  --foundation, -f <path>           Vault directory override
+  --no-auth                         Disable bearer token authentication
+  --help, -h                        Show this help
+`);
+    } else {
+        console.log(`
 cxms — Context Management System server
 
 Usage:
@@ -103,6 +126,7 @@ Endpoints:
   *    /cx/*                        REST API (bearer token required)
   *    /mcp                         MCP tool server
 `);
+    }
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -151,6 +175,65 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
     console.log(`  logs/                Access & error logs`);
     console.log(`\nNo context types created — add them via the API or MCP.`);
     console.log(`Start the server with: cxms`);
+}
+
+async function cmdPhaibelInit(): Promise<void> {
+    setPlatform(createNodePlatform());
+
+    const readline = await import('readline');
+    const os = await import('os');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    const ask = (q: string) => new Promise<string>(r => rl.question(q, a => r(a.trim())));
+
+    console.log('\n  \x1b[1m\x1b[36mPhaibel\x1b[0m — Personal AI agent\n');
+    console.log('  This will set up your vault and personal profile.\n');
+
+    // Pick vault location
+    const defaultVault = path.join(os.homedir(), 'Phaibel');
+    const vaultInput = await ask(`  Vault location (default: ${defaultVault}): `);
+    const vaultDir = path.resolve(vaultInput || defaultVault);
+    rl.close();
+
+    // Check if already initialised
+    setPlatform(createNodePlatform());
+    setFoundationRoot(vaultDir);
+
+    const existing = await getOnboardingStatus();
+    if (existing.complete) {
+        console.log(`\n  Already set up for \x1b[1m${existing.userName}\x1b[0m (${existing.role}) at ${vaultDir}`);
+        console.log(`  Agent: ${existing.agentName}`);
+        console.log(`\n  Start with: phaibel\n`);
+        return;
+    }
+
+    // Create vault directory if needed
+    await fs.mkdir(vaultDir, { recursive: true });
+    console.log(`\n  Vault: \x1b[2m${vaultDir}\x1b[0m\n`);
+
+    // Run interview
+    const answers = await runInteractiveInterview();
+
+    // Run onboarding
+    const result = await runOnboarding(answers, vaultDir);
+
+    // Save foundation root + instance identity to system config
+    await saveSystemConfig({
+        foundationRoot: vaultDir,
+        port: DEFAULT_PORT,
+        name: answers.agentName || 'Phaibel',
+        description: `${answers.name}'s personal Phaibel agent`,
+    });
+
+    const token = await loadBearerToken();
+
+    console.log(`\n  \x1b[32m✓\x1b[0m Vault ready at ${vaultDir}`);
+    console.log(`  \x1b[32m✓\x1b[0m Context types: ${result.typesCreated.length > 0 ? result.typesCreated.join(', ') : 'installed'}`);
+    console.log(`  \x1b[32m✓\x1b[0m Profiles written\n`);
+    console.log(`  Start your agent:\n`);
+    console.log(`    \x1b[1mphaibel\x1b[0m\n`);
+    console.log(`  Bearer token (for API / MCP clients):\n`);
+    console.log(`    \x1b[2m${token.slice(0, 18)}...\x1b[0m\n`);
 }
 
 async function cmdOnboard(): Promise<void> {
@@ -310,7 +393,12 @@ async function startServer(opts: {
 
 const opts = parseArgs(process.argv);
 
-if (opts.command === 'init') {
+// When invoked as `phaibel init`, map to the rich setup flow
+if (IS_PHAIBEL && opts.command === 'init') opts.command = 'phaibel-init';
+
+if (opts.command === 'phaibel-init') {
+    cmdPhaibelInit().catch(err => { console.error(err); process.exit(1); });
+} else if (opts.command === 'init') {
     cmdInit().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'onboard') {
     cmdOnboard().catch(err => { console.error(err); process.exit(1); });
