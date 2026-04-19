@@ -14,13 +14,18 @@
 //
 // Usage (phaibel):
 //   phaibel init                  First-time setup — choose vault location + interview
-//   phaibel                       Start the CxMS server (same as cxms)
+//   phaibel start                 Start the server in the background
+//   phaibel stop                  Stop the background server
+//   phaibel restart               Restart the background server
+//   phaibel status                Show whether the server is running
+//   phaibel token                 Print the bearer token
 // ─────────────────────────────────────────────────────────────────────────────
 
 import http from 'http';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { setPlatform } from './platform/index.js';
 import { createNodePlatform } from './platform/node.js';
 import { setFoundationRoot, findFoundationRoot } from './foundation.js';
@@ -51,15 +56,19 @@ function parseArgs(argv: string[]): {
     foundation?: string;
     noAuth: boolean;
     regenerate: boolean;
+    server: boolean;
     name?: string;
     description?: string;
 } {
     const args = argv.slice(2);
-    const result: ReturnType<typeof parseArgs> = { noAuth: false, regenerate: false };
+    const result: ReturnType<typeof parseArgs> = { noAuth: false, regenerate: false, server: false };
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
-        if (arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'phaibel-init') {
+        if (
+            arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'phaibel-init' ||
+            arg === 'start' || arg === 'stop' || arg === 'restart' || arg === 'status'
+        ) {
             result.command = arg;
         } else if (arg === '--port' || arg === '-p') {
             result.port = parseInt(args[++i], 10);
@@ -73,6 +82,8 @@ function parseArgs(argv: string[]): {
             result.noAuth = true;
         } else if (arg === '--regenerate') {
             result.regenerate = true;
+        } else if (arg === '--server') {
+            result.server = true;
         } else if (arg === '--help' || arg === '-h') {
             printHelp();
             process.exit(0);
@@ -89,7 +100,10 @@ phaibel — Personal AI agent powered by CxMS
 
 Usage:
   phaibel init                      First-time setup — choose vault location + interview
-  phaibel                           Start the CxMS server
+  phaibel start                     Start the server in the background
+  phaibel stop                      Stop the background server
+  phaibel restart                   Restart the background server
+  phaibel status                    Show whether the server is running
   phaibel token                     Print the bearer token
   phaibel token --regenerate        Generate a new bearer token
 
@@ -98,6 +112,10 @@ Options:
   --foundation, -f <path>           Vault directory override
   --no-auth                         Disable bearer token authentication
   --help, -h                        Show this help
+
+Files:
+  ~/.cxms/phaibel.pid               PID of the background server process
+  ~/.cxms/phaibel.log               Server log output
 `);
     } else {
         console.log(`
@@ -127,6 +145,27 @@ Endpoints:
   *    /cx/*                        REST API (bearer token required)
   *    /mcp                         MCP tool server
 `);
+    }
+}
+
+// ── Daemon helpers ───────────────────────────────────────────────────────────
+
+async function getCxmsDir(): Promise<string> {
+    const { default: os } = await import('os');
+    const dir = path.join(os.homedir(), '.cxms');
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+}
+
+async function getRunningPid(): Promise<number | null> {
+    try {
+        const dir = await getCxmsDir();
+        const pidFile = path.join(dir, 'phaibel.pid');
+        const pid = parseInt(await fs.readFile(pidFile, 'utf8'), 10);
+        process.kill(pid, 0); // throws if not running
+        return pid;
+    } catch {
+        return null;
     }
 }
 
@@ -204,7 +243,7 @@ async function cmdPhaibelInit(): Promise<void> {
     if (existing.complete) {
         console.log(`\n  Already set up for \x1b[1m${existing.userName}\x1b[0m (${existing.role}) at ${vaultDir}`);
         console.log(`  Agent: ${existing.agentName}`);
-        console.log(`\n  Start with: phaibel\n`);
+        console.log(`\n  Start with: phaibel start\n`);
         return;
     }
 
@@ -232,7 +271,7 @@ async function cmdPhaibelInit(): Promise<void> {
     console.log(`  \x1b[32m✓\x1b[0m Context types: ${result.typesCreated.length > 0 ? result.typesCreated.join(', ') : 'installed'}`);
     console.log(`  \x1b[32m✓\x1b[0m Profiles written\n`);
     console.log(`  Start your agent:\n`);
-    console.log(`    \x1b[1mphaibel\x1b[0m\n`);
+    console.log(`    \x1b[1mphaibel start\x1b[0m\n`);
     console.log(`  Bearer token (for API / MCP clients):\n`);
     console.log(`    \x1b[2m${token.slice(0, 18)}...\x1b[0m\n`);
 }
@@ -274,6 +313,79 @@ async function cmdToken(regenerate: boolean): Promise<void> {
     } else {
         const token = await loadBearerToken();
         console.log(token);
+    }
+}
+
+// ── Daemon commands (phaibel only) ──────────────────────────────────────────
+
+async function cmdStart(opts: {
+    port?: number;
+    foundation?: string;
+    noAuth: boolean;
+}): Promise<void> {
+    const existing = await getRunningPid();
+    const port = opts.port || DEFAULT_PORT;
+    if (existing) {
+        console.log(`Phaibel is already running (pid ${existing})`);
+        console.log(`  Client: http://localhost:${port}/`);
+        return;
+    }
+
+    const dir = await getCxmsDir();
+    const pidFile = path.join(dir, 'phaibel.pid');
+    const logFile = path.join(dir, 'phaibel.log');
+
+    const args = ['--server'];
+    if (opts.port) args.push('--port', String(opts.port));
+    if (opts.foundation) args.push('--foundation', opts.foundation);
+    if (opts.noAuth) args.push('--no-auth');
+
+    const log = await fs.open(logFile, 'a');
+    const child = spawn(process.argv[0], [process.argv[1], ...args], {
+        detached: true,
+        stdio: ['ignore', log.fd, log.fd],
+    });
+    child.unref();
+    await log.close();
+
+    await fs.writeFile(pidFile, String(child.pid));
+
+    console.log(`Phaibel started (pid ${child.pid})`);
+    console.log(`  Client:  http://localhost:${port}/`);
+    console.log(`  Log:     ${logFile}`);
+    console.log(`\n  Stop with: phaibel stop`);
+}
+
+async function cmdStop(): Promise<void> {
+    const pid = await getRunningPid();
+    if (!pid) {
+        console.log('Phaibel is not running.');
+        return;
+    }
+
+    process.kill(pid, 'SIGTERM');
+
+    const dir = await getCxmsDir();
+    await fs.unlink(path.join(dir, 'phaibel.pid')).catch(() => {});
+
+    console.log(`Phaibel stopped (pid ${pid})`);
+}
+
+async function cmdRestart(opts: { port?: number; foundation?: string; noAuth: boolean }): Promise<void> {
+    await cmdStop();
+    await new Promise(r => setTimeout(r, 600));
+    await cmdStart(opts);
+}
+
+async function cmdStatus(port?: number): Promise<void> {
+    const pid = await getRunningPid();
+    const p = port || DEFAULT_PORT;
+    if (pid) {
+        console.log(`Phaibel is running (pid ${pid})`);
+        console.log(`  Client: http://localhost:${p}/`);
+    } else {
+        console.log('Phaibel is not running.');
+        console.log('  Start with: phaibel start');
     }
 }
 
@@ -414,6 +526,18 @@ if (opts.command === 'phaibel-init') {
     cmdOnboard().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'token') {
     cmdToken(opts.regenerate).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'start') {
+    cmdStart(opts).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'stop') {
+    cmdStop().catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'restart') {
+    cmdRestart(opts).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'status') {
+    cmdStatus(opts.port).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && !opts.command && !opts.server) {
+    // `phaibel` alone — show help instead of starting server
+    printHelp();
 } else {
+    // cxms (foreground) or phaibel --server (daemon child)
     startServer(opts).catch(err => { console.error(err); process.exit(1); });
 }
