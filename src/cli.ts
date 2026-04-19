@@ -20,6 +20,7 @@
 import http from 'http';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { setPlatform } from './platform/index.js';
 import { createNodePlatform } from './platform/node.js';
 import { setFoundationRoot, findFoundationRoot } from './foundation.js';
@@ -355,10 +356,18 @@ async function startServer(opts: {
             return;
         }
 
-        // Root — redirect to health
+        // Root — serve HTML client
         if (url.pathname === '/') {
-            res.writeHead(302, { Location: '/cx/health' });
-            res.end();
+            try {
+                const __dirname = path.dirname(fileURLToPath(import.meta.url));
+                const clientPath = path.join(__dirname, '..', 'Assistant.html');
+                const html = await fs.readFile(clientPath, 'utf8');
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(html);
+            } catch {
+                res.writeHead(302, { Location: '/cx/health' });
+                res.end();
+            }
             return;
         }
 
@@ -371,6 +380,7 @@ async function startServer(opts: {
         console.log(`\nCxMS — ${instanceName}`);
         console.log(`  ${instanceDescription}`);
         console.log(`\nListening on http://localhost:${port}`);
+        console.log(`  Client:    http://localhost:${port}/`);
         console.log(`  REST API:  http://localhost:${port}/cx/health`);
         console.log(`  MCP:       http://localhost:${port}/mcp`);
         if (token) {
