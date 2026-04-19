@@ -6,6 +6,9 @@ cd "$(dirname "$0")"
 echo "── Build ──"
 npm run build
 
+echo "── Link ──"
+npm link
+
 echo "── Test ──"
 node test/analytics.test.mjs
 node test/preview-retrieve.test.mjs
