@@ -44,6 +44,14 @@ import { handleMcpRoute } from './server/mcp-server.js';
 import { setAuthEnabled } from './server/auth.js';
 import { getEntityIndex } from './index/entity-index.js';
 import { FOUNDATION_MARKER } from './types.js';
+import {
+    loadKeys, setKey, removeKey, maskKey, promptKey,
+    VENDORS, type Vendor,
+} from './server/keys-config.js';
+import {
+    loadModels, saveModels, setModel,
+    SUITES, MODEL_ROLES, type ModelRole,
+} from './server/models-config.js';
 
 const DEFAULT_PORT = 3800;
 const IS_PHAIBEL = path.basename(process.argv[1] || '').startsWith('phaibel');
@@ -67,7 +75,8 @@ function parseArgs(argv: string[]): {
         const arg = args[i];
         if (
             arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'phaibel-init' ||
-            arg === 'start' || arg === 'stop' || arg === 'restart' || arg === 'status'
+            arg === 'start' || arg === 'stop' || arg === 'restart' || arg === 'status' ||
+            arg === 'keys' || arg === 'models'
         ) {
             result.command = arg;
         } else if (arg === '--port' || arg === '-p') {
@@ -106,6 +115,18 @@ Usage:
   phaibel status                    Show whether the server is running
   phaibel token                     Print the bearer token
   phaibel token --regenerate        Generate a new bearer token
+
+API keys:
+  phaibel keys                      List configured API keys (masked)
+  phaibel keys add <vendor> [key]   Add or update a key (prompts if key omitted)
+  phaibel keys remove <vendor>      Remove a key
+  Vendors: anthropic, openai, gemini, deepseek
+
+Models:
+  phaibel models                    Show current model configuration
+  phaibel models use <vendor>       Switch to a vendor's default model suite
+  phaibel models set <role> <model> Override a single model role
+  Roles: chat, fast, embed
 
 Options:
   --port, -p <port>                 Port to listen on (default: 3800)
@@ -314,6 +335,113 @@ async function cmdToken(regenerate: boolean): Promise<void> {
         const token = await loadBearerToken();
         console.log(token);
     }
+}
+
+// ── Keys & models commands (phaibel only) ───────────────────────────────────
+
+async function cmdKeys(args: string[]): Promise<void> {
+    const [sub, vendor, keyArg] = args;
+
+    if (!sub || sub === 'list') {
+        const keys = await loadKeys();
+        const configured = VENDORS.filter(v => keys[v]);
+        if (configured.length === 0) {
+            console.log('No API keys configured.');
+            console.log(`  Add one: phaibel keys add <vendor> [key]`);
+            console.log(`  Vendors: ${VENDORS.join(', ')}`);
+            return;
+        }
+        console.log('API keys:');
+        for (const v of VENDORS) {
+            const k = keys[v];
+            console.log(`  ${v.padEnd(12)} ${k ? maskKey(k) : '(not set)'}`);
+        }
+        return;
+    }
+
+    if (sub === 'add') {
+        if (!vendor || !VENDORS.includes(vendor as Vendor)) {
+            console.error(`Vendor must be one of: ${VENDORS.join(', ')}`);
+            process.exit(1);
+        }
+        const key = keyArg || await promptKey(vendor);
+        if (!key) { console.error('No key provided.'); process.exit(1); }
+        await setKey(vendor as Vendor, key);
+        console.log(`${vendor} key saved.`);
+        return;
+    }
+
+    if (sub === 'remove') {
+        if (!vendor || !VENDORS.includes(vendor as Vendor)) {
+            console.error(`Vendor must be one of: ${VENDORS.join(', ')}`);
+            process.exit(1);
+        }
+        await removeKey(vendor as Vendor);
+        console.log(`${vendor} key removed.`);
+        return;
+    }
+
+    console.error(`Unknown subcommand: phaibel keys ${sub}`);
+    console.error('Usage: phaibel keys [list | add <vendor> [key] | remove <vendor>]');
+    process.exit(1);
+}
+
+async function cmdModels(args: string[]): Promise<void> {
+    const [sub, ...rest] = args;
+
+    if (!sub || sub === 'list') {
+        const m = await loadModels();
+        const isEmpty = !m.chat && !m.fast && !m.embed;
+        if (isEmpty) {
+            console.log('No model configuration set.');
+            console.log('  Switch to a suite: phaibel models use <vendor>');
+            console.log(`  Vendors: ${Object.keys(SUITES).join(', ')}`);
+            return;
+        }
+        console.log('Model configuration:');
+        if (m.vendor) console.log(`  Suite:  ${m.vendor}`);
+        console.log(`  chat:   ${m.chat  || '(not set)'}`);
+        console.log(`  fast:   ${m.fast  || '(not set)'}`);
+        console.log(`  embed:  ${m.embed || '(not set)'}`);
+        console.log('');
+        console.log('  Change suite:  phaibel models use <vendor>');
+        console.log('  Change model:  phaibel models set <role> <model>');
+        return;
+    }
+
+    if (sub === 'use') {
+        const vendor = rest[0];
+        if (!vendor || !(vendor in SUITES)) {
+            console.error(`Vendor must be one of: ${Object.keys(SUITES).join(', ')}`);
+            process.exit(1);
+        }
+        const suite = SUITES[vendor as Vendor];
+        await saveModels(suite);
+        console.log(`Switched to ${vendor} suite:`);
+        console.log(`  chat:   ${suite.chat  || '(none)'}`);
+        console.log(`  fast:   ${suite.fast  || '(none)'}`);
+        console.log(`  embed:  ${suite.embed || '(none)'}`);
+        return;
+    }
+
+    if (sub === 'set') {
+        const [role, model] = rest;
+        if (!role || !MODEL_ROLES.includes(role as ModelRole)) {
+            console.error(`Role must be one of: ${MODEL_ROLES.join(', ')}`);
+            process.exit(1);
+        }
+        if (!model) {
+            console.error('Usage: phaibel models set <role> <model>');
+            process.exit(1);
+        }
+        await setModel(role as ModelRole, model);
+        console.log(`${role} → ${model}`);
+        return;
+    }
+
+    console.error(`Unknown subcommand: phaibel models ${sub}`);
+    console.error('Usage: phaibel models [list | use <vendor> | set <role> <model>]');
+    process.exit(1);
 }
 
 // ── Daemon commands (phaibel only) ──────────────────────────────────────────
@@ -534,6 +662,10 @@ if (opts.command === 'phaibel-init') {
     cmdRestart(opts).catch(err => { console.error(err); process.exit(1); });
 } else if (IS_PHAIBEL && opts.command === 'status') {
     cmdStatus(opts.port).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'keys') {
+    cmdKeys(process.argv.slice(3)).catch(err => { console.error(err); process.exit(1); });
+} else if (IS_PHAIBEL && opts.command === 'models') {
+    cmdModels(process.argv.slice(3)).catch(err => { console.error(err); process.exit(1); });
 } else if (IS_PHAIBEL && !opts.command && !opts.server) {
     // `phaibel` alone — show help instead of starting server
     printHelp();
