@@ -12,6 +12,8 @@ import {
     parseEntity,
     writeEntity,
     trashEntity,
+    archiveEntity,
+    restoreEntity,
     searchEntities,
     generateNodeId,
     ensureEntityDir,
@@ -56,6 +58,7 @@ import { runOnboarding, getOnboardingStatus } from '../onboarding/index.js';
 import { logAccess } from '../log/access-log.js';
 import { logError } from '../log/error-log.js';
 import { debug } from '../debug.js';
+import { serializeCxmsToCxf } from '../cxf/cxf-serializer.js';
 
 // ── Router ───────────────────────────────────────────────────────────────────
 
@@ -103,6 +106,11 @@ async function routeRequest(
 
         // All other routes require authentication
         if (!await authenticateRequest(req, res)) return true;
+
+        // GET /cx/cxf — CXF/1 export
+        if (pathname === '/cx/cxf' && method === 'GET') {
+            return await handleCxfExport(res, url);
+        }
 
         // GET /cx/analytics
         if (pathname === '/cx/analytics' && method === 'GET') {
@@ -219,7 +227,7 @@ async function routeRequest(
             const nodeId = decodeURIComponent(nodeMatch[2]);
             if (method === 'GET') return await handleGetNode(res, typeName, nodeId);
             if (method === 'PUT') return await handleUpdateNode(req, res, typeName, nodeId);
-            if (method === 'DELETE') return await handleDeleteNode(res, typeName, nodeId);
+            if (method === 'DELETE') return await handleDeleteNode(res, typeName, nodeId, url);
             methodNotAllowed(res, ['GET', 'PUT', 'DELETE'], pathname);
             return true;
         }
@@ -778,7 +786,7 @@ async function handleUpdateNode(
         return true;
     }
 
-    const entities = await listEntities(typeName);
+    const entities = await listEntities(typeName, { includeArchived: true });
     const entity = entities.find(e => e.meta.id === nodeId);
     if (!entity) {
         notFound(res, `Node "${nodeId}" not found in type "${typeName}"`);
@@ -799,6 +807,8 @@ async function handleUpdateNode(
     if (body.tags !== undefined) updatedMeta.tags = body.tags;
     if (body.summary !== undefined) updatedMeta.summary = body.summary;
     if (body.references !== undefined) updatedMeta.references = body.references;
+    // null explicitly clears archivedAt (restore from archive)
+    if (body.archivedAt === null) delete updatedMeta.archivedAt;
 
     const customFields = extractBodyFields(body, typeConfig);
     Object.assign(updatedMeta, customFields);
@@ -819,23 +829,34 @@ async function handleUpdateNode(
     return true;
 }
 
-async function handleDeleteNode(res: http.ServerResponse, typeName: string, nodeId: string): Promise<boolean> {
+async function handleDeleteNode(
+    res: http.ServerResponse,
+    typeName: string,
+    nodeId: string,
+    url: URL,
+): Promise<boolean> {
     const typeConfig = await getEntityType(typeName);
     if (!typeConfig) {
         notFound(res, `Context type "${typeName}" not found`);
         return true;
     }
 
-    const entities = await listEntities(typeName);
+    const entities = await listEntities(typeName, { includeArchived: true });
     const entity = entities.find(e => e.meta.id === nodeId);
     if (!entity) {
         notFound(res, `Node "${nodeId}" not found in type "${typeName}"`);
         return true;
     }
 
-    const trashPath = await trashEntity(entity.filepath);
-    const { paths } = getPlatform();
-    jsonResponse(res, 200, { deleted: nodeId, trashedTo: paths.basename(trashPath) });
+    const hard = url.searchParams.get('hard') === 'true';
+    if (hard) {
+        const trashPath = await trashEntity(entity.filepath);
+        const { paths } = getPlatform();
+        jsonResponse(res, 200, { deleted: nodeId, hard: true, trashedTo: paths.basename(trashPath) });
+    } else {
+        await archiveEntity(entity.filepath, entity.meta);
+        jsonResponse(res, 200, { archived: nodeId, hard: false });
+    }
     return true;
 }
 
@@ -848,6 +869,64 @@ async function handleNodeCount(res: http.ServerResponse, typeName: string): Prom
 
     const entities = await listEntities(typeName);
     jsonResponse(res, 200, { type: typeName, count: entities.length });
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CXF/1 Export Handler
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function handleCxfExport(res: http.ServerResponse, url: URL): Promise<boolean> {
+    const since = url.searchParams.get('since');
+    const typesParam = url.searchParams.get('types');
+    const includeSchema = url.searchParams.get('include_schema') !== 'false';
+    const includeGraph = url.searchParams.get('include_graph') !== 'false';
+    const excludeArchived = url.searchParams.get('exclude_archived') !== 'false'; // default true
+    const tagsParam = url.searchParams.get('tags');
+    const filterTags = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const filterTypes = typesParam ? typesParam.split(',').map(t => t.trim()).filter(Boolean) : [];
+    const sinceIso = since ? new Date(parseInt(since, 10) * 1000).toISOString() : null;
+
+    const allTypes = await loadEntityTypes();
+    const types = filterTypes.length ? allTypes.filter(t => filterTypes.includes(t.name)) : allTypes;
+
+    const records: Array<{ typeName: string; nodes: import('../cxf/cxf-serializer.js').ContextNodeRecord[] }> = [];
+
+    for (const typeConfig of types) {
+        let nodes = await listEntities(typeConfig.name, {
+            tags: filterTags.length ? filterTags : undefined,
+            includeArchived: !excludeArchived,
+        });
+
+        if (sinceIso) {
+            nodes = nodes.filter(n => {
+                const upd = (n.meta.updated ?? n.meta.created) as string | undefined;
+                return upd ? upd >= sinceIso : true;
+            });
+        }
+
+        records.push({ typeName: typeConfig.name, nodes });
+    }
+
+    const exportTime = Math.floor(Date.now() / 1000);
+    const instance = getInstanceIdentity();
+    const vaultId = instance.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'cxms';
+
+    const result = serializeCxmsToCxf(records, types, {
+        vaultId,
+        ownerName: 'CxMS',
+        exportTime,
+        includeSchema,
+        includeGraph,
+    });
+
+    res.writeHead(200, {
+        'Content-Type': 'text/cxf; charset=utf-8',
+        'X-CXF-Export-Time': String(exportTime),
+        'X-CXF-Entity-Count': String(result.entityCount),
+        'X-CXF-Schema-Count': String(result.schemaCount),
+    });
+    res.end(result.document);
     return true;
 }
 

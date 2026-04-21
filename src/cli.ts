@@ -24,7 +24,6 @@
 import http from 'http';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { setPlatform } from './platform/index.js';
 import { createNodePlatform } from './platform/node.js';
@@ -593,21 +592,6 @@ async function startServer(opts: {
         // MCP server
         if (url.pathname === '/mcp') {
             await handleMcpRoute(req, res);
-            return;
-        }
-
-        // Root — serve HTML client
-        if (url.pathname === '/') {
-            try {
-                const __dirname = path.dirname(fileURLToPath(import.meta.url));
-                const clientPath = path.join(__dirname, '..', 'Assistant.html');
-                const html = await fs.readFile(clientPath, 'utf8');
-                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end(html);
-            } catch {
-                res.writeHead(302, { Location: '/cx/health' });
-                res.end();
-            }
             return;
         }
 

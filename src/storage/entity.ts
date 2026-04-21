@@ -126,6 +126,23 @@ export async function writeEntity(
     await getPlatform().storage.writeFile(filepath, fileContent);
 }
 
+/**
+ * Archive (soft-delete) a node in place by setting archivedAt on its meta.
+ * The file stays in its directory — use trashEntity for hard delete.
+ */
+export async function archiveEntity(filepath: string, meta: Record<string, unknown>): Promise<void> {
+    meta.archivedAt = new Date().toISOString();
+    await writeEntity(filepath, meta, '');
+}
+
+/**
+ * Restore a previously archived node by clearing archivedAt.
+ */
+export async function restoreEntity(filepath: string, meta: Record<string, unknown>): Promise<void> {
+    delete meta.archivedAt;
+    await writeEntity(filepath, meta, '');
+}
+
 export async function trashEntity(filepath: string): Promise<string> {
     await assertWithinFoundation(filepath);
     const { storage, paths } = getPlatform();
@@ -354,11 +371,15 @@ export async function searchEntities(
 
 export async function listEntities(
     entityType: EntityTypeName,
-    options?: { tags?: string[]; metaOnly?: boolean },
+    options?: { tags?: string[]; metaOnly?: boolean; includeArchived?: boolean },
 ): Promise<{ filepath: string; meta: Record<string, unknown>; content: string }[]> {
     const index = getEntityIndex();
     if (index.isBuilt) {
         let nodes = index.getNodes(entityType);
+
+        if (!options?.includeArchived) {
+            nodes = nodes.filter(n => !n.meta.archivedAt);
+        }
 
         if (options?.tags && options.tags.length > 0) {
             const filterTags = options.tags.map(t => t.toLowerCase());
@@ -414,13 +435,15 @@ export async function listEntities(
         debug('entities', err);
     }
 
+    let filtered = options?.includeArchived ? entities : entities.filter(e => !e.meta.archivedAt);
+
     if (options?.tags && options.tags.length > 0) {
         const filterTags = options.tags.map(t => t.toLowerCase());
-        return entities.filter(e => {
+        filtered = filtered.filter(e => {
             const entityTags = ((e.meta.tags as string[]) ?? []).map(t => t.toLowerCase());
             return filterTags.some(ft => entityTags.includes(ft));
         });
     }
 
-    return entities;
+    return filtered;
 }

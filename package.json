@@ -24,8 +24,7 @@
     }
   },
   "files": [
-    "dist",
-    "Assistant.html"
+    "dist"
   ],
   "scripts": {
     "build": "tsc",
