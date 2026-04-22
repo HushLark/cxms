@@ -27,12 +27,73 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export interface EntityMeta {
     id: string;
-    title: string;
+    name: string;
     entityType: EntityTypeName;
     created: string;
     updated?: string;
     tags: string[];
-    summary?: string;
+    description?: string;
+    /** @deprecated use name */ title?: string;
+    /** @deprecated use description */ summary?: string;
+}
+
+export const CORE_FRONTMATTER_KEYS = new Set([
+    'id', 'entityType', 'contextType',
+    'name', 'title',
+    'description', 'summary',
+    'tags', 'created', 'updated', 'source', 'references',
+]);
+
+function parseFieldScalar(raw: string): unknown {
+    const v = raw.trim();
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    if (v === 'null' || v === '~' || v === '') return null;
+    if (/^-?\d+$/.test(v)) return parseInt(v, 10);
+    if (/^-?\d+\.\d+$/.test(v)) return parseFloat(v);
+    if (v.startsWith('{') || v.startsWith('[')) {
+        try { return JSON.parse(v); } catch { /* fall through */ }
+    }
+    return v;
+}
+
+function serializeFieldScalar(value: unknown): string {
+    if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+    if (typeof value === 'string') return value;
+    return JSON.stringify(value);
+}
+
+export function parseEntityBody(body: string): { fields: Record<string, unknown>; content: string } {
+    const lines = body.split('\n');
+    const fields: Record<string, unknown> = {};
+    let fieldLineCount = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.trim() === '') {
+            fieldLineCount = i + 1;
+            break;
+        }
+        const match = line.match(/^([a-zA-Z][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
+        if (match) {
+            fields[match[1]] = parseFieldScalar(match[2]);
+            fieldLineCount = i + 1;
+        } else {
+            return { fields: {}, content: body.trim() };
+        }
+    }
+
+    return { fields, content: lines.slice(fieldLineCount).join('\n').trim() };
+}
+
+export function serializeEntityBody(domainFields: Record<string, unknown>, content: string): string {
+    const lines: string[] = [];
+    for (const [key, value] of Object.entries(domainFields)) {
+        if (value === undefined || value === null) continue;
+        lines.push(`${key}: ${serializeFieldScalar(value)}`);
+    }
+    if (lines.length === 0) return content;
+    return lines.join('\n') + '\n\n' + content;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,7 +135,7 @@ export function createEntityMeta(
 ): EntityMeta {
     return {
         id: generateNodeId(),
-        title,
+        name: title,
         entityType,
         created: new Date().toISOString(),
         tags: opts.tags ?? [],
@@ -103,9 +164,17 @@ export async function ensureEntityDir(entityType: EntityTypeName): Promise<strin
 }
 
 export function parseEntity(filepath: string, rawContent: string): { meta: Record<string, unknown>; content: string } {
-    const { data, content } = matter(rawContent);
-    data._filepath = filepath;
-    return { meta: data, content: content.trim() };
+    const { data, content: rawBody } = matter(rawContent);
+
+    // Normalise legacy field names
+    if (data.title !== undefined && data.name === undefined) data.name = data.title;
+    if (data.summary !== undefined && data.description === undefined) data.description = data.summary;
+    if (data.name !== undefined) data.title = data.name;
+
+    const { fields, content } = parseEntityBody(rawBody.trim());
+    const meta: Record<string, unknown> = { ...fields, ...data };
+    meta._filepath = filepath;
+    return { meta, content };
 }
 
 export async function writeEntity(
@@ -115,14 +184,30 @@ export async function writeEntity(
 ): Promise<void> {
     await assertWithinFoundation(filepath);
     meta.updated = new Date().toISOString();
+
     const cleanMeta = { ...meta };
     delete cleanMeta._filepath;
-    for (const key of Object.keys(cleanMeta)) {
-        if (cleanMeta[key] === undefined) {
-            delete cleanMeta[key];
+
+    // Normalise title → name, summary → description
+    if (cleanMeta.title !== undefined && cleanMeta.name === undefined) cleanMeta.name = cleanMeta.title;
+    delete cleanMeta.title;
+    if (cleanMeta.summary !== undefined && cleanMeta.description === undefined) cleanMeta.description = cleanMeta.summary;
+    delete cleanMeta.summary;
+
+    // Split core (frontmatter) from domain (body)
+    const frontmatter: Record<string, unknown> = {};
+    const domainFields: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(cleanMeta)) {
+        if (value === undefined) continue;
+        if (CORE_FRONTMATTER_KEYS.has(key)) {
+            frontmatter[key] = value;
+        } else {
+            domainFields[key] = value;
         }
     }
-    const fileContent = matter.stringify(content, cleanMeta);
+
+    const fullBody = serializeEntityBody(domainFields, content);
+    const fileContent = matter.stringify(fullBody, frontmatter);
     await getPlatform().storage.writeFile(filepath, fileContent);
 }
 

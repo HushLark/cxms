@@ -12,7 +12,12 @@ import { getFoundationRoot } from '../foundation.js';
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type FieldType = 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'duration' | 'enum' | 'array' | 'object';
+export type FieldType =
+    | 'string' | 'number' | 'boolean'
+    | 'date' | 'datetime' | 'duration' | 'time'
+    | 'date-fixed' | 'date-floating'
+    | 'reference'
+    | 'enum' | 'array' | 'object';
 
 export interface FieldDef {
     key: string;
@@ -21,6 +26,7 @@ export interface FieldDef {
     required?: boolean;
     default?: unknown;
     values?: string[];
+    targetType?: string;        // for reference fields — which entity type to target
 }
 
 export interface FieldMapping {
@@ -57,7 +63,9 @@ export interface EntityTypeConfig {
     completionField?: string;
     completionValue?: string;
     spawner?: SpawnerConfig;
-    calendarDateField?: string;
+    calendarDateField?: string;     // field key used for calendar start
+    calendarEndField?: string;      // field key for period end (date or datetime)
+    calendarDurationField?: string; // field key for period duration (duration)
 }
 
 interface EntityTypesFile {
@@ -153,8 +161,9 @@ export async function addEntityType(config: EntityTypeConfig): Promise<void> {
         if (!field) {
             throw new Error(`calendarDateField "${config.calendarDateField}" does not match any field in this entity type.`);
         }
-        if (field.type !== 'date' && field.type !== 'datetime') {
-            throw new Error(`calendarDateField "${config.calendarDateField}" must be a date or datetime field, got "${field.type}".`);
+        const calendarTypes: FieldType[] = ['date', 'datetime', 'date-fixed', 'date-floating'];
+        if (!calendarTypes.includes(field.type)) {
+            throw new Error(`calendarDateField "${config.calendarDateField}" must be a date, datetime, date-fixed, or date-floating field, got "${field.type}".`);
         }
     }
     types.push(config);

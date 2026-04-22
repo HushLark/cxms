@@ -132,6 +132,16 @@ async function routeRequest(
             return await handleSearch(req, res);
         }
 
+        // GET /cx/search/summary — Progressive Disclosure: frontmatter-only results
+        if (pathname === '/cx/search/summary' && method === 'GET') {
+            return await handleSearchSummary(req, res, url);
+        }
+
+        // POST /cx/nodes/detail — Progressive Disclosure: batch fetch full NodeDetail
+        if (pathname === '/cx/nodes/detail' && method === 'POST') {
+            return await handleNodeDetail(req, res);
+        }
+
         // POST /cx/nodes/batch
         if (pathname === '/cx/nodes/batch' && method === 'POST') {
             return await handleBatchGetNodes(req, res);
@@ -212,6 +222,12 @@ async function routeRequest(
         const detailsMatch = pathname.match(/^\/cx\/context-types\/([^/]+)\/details$/);
         if (detailsMatch && method === 'GET') {
             return await handleTypeDetails(res, decodeURIComponent(detailsMatch[1]));
+        }
+
+        // GET /cx/context-types/{type}/summaries — Progressive Disclosure: frontmatter-only list
+        const summariesMatch = pathname.match(/^\/cx\/context-types\/([^/]+)\/summaries$/);
+        if (summariesMatch && method === 'GET') {
+            return await handleTypeSummaries(res, url, decodeURIComponent(summariesMatch[1]));
         }
 
         // GET /cx/context-types/{type}/count
@@ -967,4 +983,164 @@ async function buildAncestorContext(typeName: string): Promise<string[]> {
     // Returns deepest-first, so we reverse to get root → type order
     const chain = await buildContextChain(typeDir);
     return chain.reverse();
+}
+
+// ── Progressive Disclosure Handlers ──────────────────────────────────────────
+
+/**
+ * GET /cx/search/summary?q=...&types=type1,type2&limit=30
+ * Returns NodeSummary[] (frontmatter only) for token-efficient context retrieval.
+ */
+async function handleSearchSummary(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+): Promise<boolean> {
+    const q = url.searchParams.get('q') ?? '';
+    const typesParam = url.searchParams.get('types');
+    const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '30', 10), 100);
+    const filterTypes = typesParam ? typesParam.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+    if (!q.trim()) {
+        badRequest(res, 'Missing required query parameter: q', '/cx/search/summary');
+        return true;
+    }
+
+    const { searchEntities, CORE_FRONTMATTER_KEYS } = await import('../storage/entity.js');
+    const allTypes = await loadEntityTypes();
+    const targetTypes = filterTypes.length
+        ? allTypes.filter(t => filterTypes.includes(t.name))
+        : allTypes;
+
+    const summaries: import('../types.js').NodeSummary[] = [];
+
+    for (const typeConfig of targetTypes) {
+        if (summaries.length >= limit) break;
+        const results = await searchEntities(q, typeConfig.name);
+        for (const { meta } of results) {
+            if (summaries.length >= limit) break;
+            if (meta.archivedAt) continue;
+            summaries.push({
+                id: meta.id as string,
+                name: (meta.name as string) || (meta.title as string) || String(meta.id),
+                contextType: typeConfig.name,
+                description: (meta.description as string) || (meta.summary as string) || undefined,
+                tags: Array.isArray(meta.tags) ? (meta.tags as string[]) : [],
+                created: (meta.created as string) || '',
+                updated: (meta.updated as string) || undefined,
+            });
+        }
+    }
+
+    jsonResponse(res, 200, { summaries, total: summaries.length });
+    return true;
+}
+
+/**
+ * POST /cx/nodes/detail
+ * Body: { ids: string[] }
+ * Returns NodeDetail[] — full node with domain fields and body text.
+ */
+async function handleNodeDetail(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+): Promise<boolean> {
+    const body = await readBody(req);
+    let ids: string[];
+    try {
+        const parsed = JSON.parse(body);
+        ids = Array.isArray(parsed.ids) ? parsed.ids : [];
+    } catch {
+        badRequest(res, 'Body must be JSON with an "ids" array', '/cx/nodes/detail');
+        return true;
+    }
+
+    if (ids.length === 0) {
+        jsonResponse(res, 200, { nodes: [] });
+        return true;
+    }
+
+    const { getPlatform } = await import('../platform/index.js');
+    const { parseEntity, CORE_FRONTMATTER_KEYS } = await import('../storage/entity.js');
+    const { paths, storage } = getPlatform();
+    const root = findFoundationRoot() ?? '';
+    const allTypes = await loadEntityTypes();
+    const nodes: import('../types.js').NodeDetail[] = [];
+
+    for (const id of ids.slice(0, 50)) { // cap at 50 to prevent abuse
+        let found = false;
+        for (const typeConfig of allTypes) {
+            const dir = paths.join(root, typeConfig.directory);
+            try {
+                const files = await storage.readdir(dir);
+                const match = files.find(f => f.includes(`_${id}.md`) || f === `${id}.md`);
+                if (!match) continue;
+                const filepath = paths.join(dir, match);
+                const raw = await storage.readFile(filepath, 'utf-8');
+                const { meta, content } = parseEntity(filepath, raw);
+                const domainFields: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(meta)) {
+                    if (!CORE_FRONTMATTER_KEYS.has(key) && !key.startsWith('_')) {
+                        domainFields[key] = value;
+                    }
+                }
+                nodes.push({
+                    id: meta.id as string,
+                    name: (meta.name as string) || (meta.title as string) || id,
+                    contextType: typeConfig.name,
+                    description: (meta.description as string) || (meta.summary as string) || undefined,
+                    tags: Array.isArray(meta.tags) ? (meta.tags as string[]) : [],
+                    created: (meta.created as string) || '',
+                    updated: (meta.updated as string) || undefined,
+                    fields: domainFields,
+                    body: content,
+                });
+                found = true;
+                break;
+            } catch { /* skip */ }
+        }
+        if (!found) debug('cx-router', `Node not found for detail: ${id}`);
+    }
+
+    jsonResponse(res, 200, { nodes });
+    return true;
+}
+
+/**
+ * GET /cx/context-types/{type}/summaries?page=1&limit=30
+ * Returns paginated NodeSummary[] for a specific context type.
+ */
+async function handleTypeSummaries(
+    res: http.ServerResponse,
+    url: URL,
+    typeName: string,
+): Promise<boolean> {
+    const typeConfig = await getEntityType(typeName);
+    if (!typeConfig) {
+        notFound(res, `Context type not found: ${typeName}`, `/cx/context-types/${typeName}/summaries`);
+        return true;
+    }
+
+    const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '30', 10), 100);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
+
+    const allNodes = await listEntities(typeName, { metaOnly: true });
+    const total = allNodes.length;
+    const start = (page - 1) * limit;
+    const paged = allNodes.slice(start, start + limit);
+
+    const summaries: import('../types.js').NodeSummary[] = paged
+        .filter(({ meta }) => !meta.archivedAt)
+        .map(({ meta }) => ({
+            id: meta.id as string,
+            name: (meta.name as string) || (meta.title as string) || String(meta.id),
+            contextType: typeName,
+            description: (meta.description as string) || (meta.summary as string) || undefined,
+            tags: Array.isArray(meta.tags) ? (meta.tags as string[]) : [],
+            created: (meta.created as string) || '',
+            updated: (meta.updated as string) || undefined,
+        }));
+
+    jsonResponse(res, 200, { summaries, total, page, limit, pages: Math.ceil(total / limit) });
+    return true;
 }

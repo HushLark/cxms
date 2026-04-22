@@ -54,8 +54,8 @@ export function toContextType(etc: EntityTypeConfig): ContextType {
 export interface ContextNodeMeta {
     /** 8 alphanumeric character unique ID */
     id: string;
-    /** Human-readable title */
-    title: string;
+    /** Human-readable name */
+    name: string;
     /** Context type this node belongs to */
     contextType: string;
     /** ISO 8601 creation timestamp */
@@ -64,14 +64,33 @@ export interface ContextNodeMeta {
     updated?: string;
     /** Tags for cross-referencing */
     tags: string[];
-    /** LLM-generated one-sentence summary (max 150 chars) */
-    summary?: string;
+    /** Short description / summary */
+    description?: string;
     /** How this node was created */
     source?: 'user' | 'assumed' | 'system';
     /** Labeled references to other nodes */
     references?: ContextReference[];
+    /** @deprecated use name */ title?: string;
+    /** @deprecated use description */ summary?: string;
     /** Additional fields defined by the context type schema */
     [key: string]: unknown;
+}
+
+/** Frontmatter-only summary — returned by search endpoints for token efficiency. */
+export interface NodeSummary {
+    id: string;
+    name: string;
+    contextType: string;
+    description?: string;
+    tags: string[];
+    created: string;
+    updated?: string;
+}
+
+/** Full node with domain fields and body content — fetched on demand. */
+export interface NodeDetail extends NodeSummary {
+    fields: Record<string, unknown>;
+    body: string;
 }
 
 /**

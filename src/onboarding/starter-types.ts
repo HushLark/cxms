@@ -59,10 +59,29 @@ const TYPE_PERSON: EntityTypeConfig = {
     description: 'A contact or person of interest — colleague, family member, vendor, etc.',
     fields: [
         { key: 'relationship', type: 'enum', values: ['family', 'friend', 'colleague', 'manager', 'report', 'vendor', 'advisor', 'other'], required: true },
-        { key: 'email',        type: 'string', label: 'Email' },
-        { key: 'phone',        type: 'string', label: 'Phone' },
-        { key: 'company',      type: 'string', label: 'Company or school' },
-        { key: 'last_contact', type: 'date',   label: 'Last contact date' },
+        { key: 'email',        type: 'string',     label: 'Email' },
+        { key: 'phone',        type: 'string',     label: 'Phone' },
+        { key: 'company',      type: 'reference',  label: 'Company', targetType: 'company' },
+        { key: 'birthday',     type: 'date-fixed', label: 'Birthday' },
+        { key: 'last_contact', type: 'date',       label: 'Last contact date' },
+    ],
+    defaultTags: [],
+};
+
+const TYPE_COMPANY: EntityTypeConfig = {
+    name: 'company',
+    plural: 'companies',
+    directory: 'context-types/company',
+    description: 'A company, organization, or institution',
+    fields: [
+        { key: 'website',         type: 'string',    label: 'Website' },
+        { key: 'industry',        type: 'string',    label: 'Industry' },
+        { key: 'size',            type: 'enum',      label: 'Size',
+          values: ['micro', 'small', 'medium', 'large', 'enterprise'] },
+        { key: 'phone',           type: 'string',    label: 'Phone' },
+        { key: 'email',           type: 'string',    label: 'Email' },
+        { key: 'location',        type: 'string',    label: 'Location' },
+        { key: 'primary_contact', type: 'reference', label: 'Primary Contact', targetType: 'person' },
     ],
     defaultTags: [],
 };
@@ -171,25 +190,25 @@ const TYPE_DECISION: EntityTypeConfig = {
 // ── Role → type set ───────────────────────────────────────────────────────────
 
 export function getStarterTypes(role: UserRole): EntityTypeConfig[] {
-    const universal = [TYPE_TASK, TYPE_NOTE, TYPE_EVENT];
+    const universal = [TYPE_TASK, TYPE_NOTE, TYPE_EVENT, TYPE_PERSON, TYPE_COMPANY];
 
     switch (role) {
         case 'parent':
-            return [...universal, TYPE_ACTIVITY, TYPE_PERSON, TYPE_GOAL];
+            return [...universal, TYPE_ACTIVITY, TYPE_GOAL];
 
         case 'educator':
-            return [...universal, TYPE_PLAYER, TYPE_PRACTICE, TYPE_PERSON, TYPE_GOAL];
+            return [...universal, TYPE_PLAYER, TYPE_PRACTICE, TYPE_GOAL];
 
         case 'professional':
-            return [...universal, TYPE_PROJECT, TYPE_DECISION, TYPE_PERSON, TYPE_GOAL];
+            return [...universal, TYPE_PROJECT, TYPE_DECISION, TYPE_GOAL];
 
         case 'entrepreneur':
-            return [...universal, TYPE_PROJECT, TYPE_PERSON, TYPE_GOAL];
+            return [...universal, TYPE_PROJECT, TYPE_GOAL];
 
         case 'student':
-            return [...universal, TYPE_GOAL, TYPE_PERSON];
+            return [...universal, TYPE_GOAL];
 
         default:
-            return [...universal, TYPE_PERSON, TYPE_GOAL];
+            return [...universal, TYPE_GOAL];
     }
 }

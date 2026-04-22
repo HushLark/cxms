@@ -120,7 +120,9 @@ function buildLinkLines(meta: Record<string, unknown>, vaultId: string): string 
 function fieldTypeToCxf(f: FieldDef): string {
     const map: Record<string, string> = {
         string: 'TEXT', number: 'NUMBER', boolean: 'BOOLEAN',
-        date: 'DATE', datetime: 'DATETIME', duration: 'DURATION',
+        date: 'DATE', datetime: 'DATETIME', duration: 'DURATION', time: 'TIME',
+        'date-fixed': 'DATE-FIXED', 'date-floating': 'DATE-FLOATING',
+        reference: 'REFERENCE',
         enum: 'ENUM', array: 'ARRAY', object: 'OBJECT',
     };
     return map[f.type] ?? 'TEXT';
@@ -136,9 +138,35 @@ function buildVSchema(typeConfig: EntityTypeConfig): string {
     for (const f of typeConfig.fields) {
         const required = f.required ? ';REQUIRED=TRUE' : '';
         const values = f.values?.length ? `;VALUES=${f.values.join(',')}` : '';
-        lines.push(foldLine(`X-CXF-FIELD;KEY=${f.key};TYPE=${fieldTypeToCxf(f)}${required}${values}:${f.label ?? f.key}`));
+        const targetType = f.targetType ? `;TARGETTYPE=${f.targetType}` : '';
+        lines.push(foldLine(`X-CXF-FIELD;KEY=${f.key};TYPE=${fieldTypeToCxf(f)}${required}${values}${targetType}:${f.label ?? f.key}`));
     }
     lines.push('END:VSCHEMA');
+    return lines.filter(Boolean).join('\r\n');
+}
+
+function buildSpecialFieldLines(
+    m: Record<string, unknown>,
+    typeConfig: EntityTypeConfig | undefined,
+    vaultId: string,
+): string {
+    if (!typeConfig) return '';
+    const lines: string[] = [];
+    for (const f of typeConfig.fields) {
+        const v = m[f.key];
+        if (v === undefined || v === null || v === '') continue;
+        const val = String(v);
+        if (f.type === 'reference') {
+            lines.push(foldLine(`X-CXF-LINK;TYPE=reference;TARGETTYPE=${f.targetType ?? ''};KEY=${f.key}:${val}@${vaultId}`));
+        } else if (f.type === 'date-fixed') {
+            lines.push(foldLine(`X-CXF-DATE-FIXED;KEY=${f.key}:${val}`));
+        } else if (f.type === 'date-floating') {
+            lines.push(foldLine(`X-CXF-DATE-FLOATING;KEY=${f.key}:${val}`));
+        } else if (f.type === 'time') {
+            const icsTime = val.replace(/:/g, '').padEnd(6, '00').slice(0, 6);
+            lines.push(foldLine(`X-CXF-FIELD-${f.key.toUpperCase()}:${icsTime}`));
+        }
+    }
     return lines.filter(Boolean).join('\r\n');
 }
 
@@ -156,6 +184,7 @@ function nodeToComponent(
     opts: CxfSerializeOpts,
     archived: boolean,
     deleted: boolean,
+    typeConfig?: EntityTypeConfig,
 ): string {
     const m = record.meta;
     const uid = `${m.id}@${opts.vaultId}`;
@@ -247,11 +276,25 @@ function nodeToComponent(
     }
 
     // VCONTEXT — all other types
+    const specialFieldKeys = new Set(
+        (typeConfig?.fields ?? [])
+            .filter(f => f.type === 'reference' || f.type === 'date-fixed' || f.type === 'date-floating' || f.type === 'time')
+            .map(f => f.key)
+    );
+
+    // Determine calendar start/end from typeConfig period fields
+    const startVal = typeConfig?.calendarDateField ? m[typeConfig.calendarDateField] : undefined;
+    const endVal = typeConfig?.calendarEndField ? m[typeConfig.calendarEndField] : undefined;
+    const durVal = typeConfig?.calendarDurationField ? m[typeConfig.calendarDurationField] : undefined;
+
     const lines = [
         'BEGIN:VCONTEXT',
         prop('UID', uid),
         prop('SUMMARY', m.title as string),
         description ? prop('DESCRIPTION', description) : '',
+        startVal ? prop('DTSTART', toIcsDate(String(startVal))) : '',
+        endVal ? prop('DTEND', toIcsDate(String(endVal))) : '',
+        durVal ? prop('DURATION', String(durVal)) : '',
         tags ? prop('CATEGORIES', tags) : '',
         prop('CREATED', created),
         prop('LAST-MODIFIED', updated),
@@ -260,9 +303,13 @@ function nodeToComponent(
         prop('X-CXF-VAULT', opts.vaultId),
     ];
 
-    // Custom fields
+    // Special-typed fields
+    const specialLines = buildSpecialFieldLines(m, typeConfig, opts.vaultId);
+    if (specialLines) lines.push(specialLines);
+
+    // Remaining custom fields
     for (const [k, v] of Object.entries(m)) {
-        if (systemKeys.has(k) || v === undefined || v === null || v === '') continue;
+        if (systemKeys.has(k) || specialFieldKeys.has(k) || v === undefined || v === null || v === '') continue;
         const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
         lines.push(foldLine(`X-CXF-FIELD-${k.toUpperCase()}:${val}`));
     }
@@ -297,12 +344,15 @@ export function serializeCxmsToCxf(
         }
     }
 
+    const typeConfigByName = new Map(entityTypes.map(t => [t.name, t]));
+
     let totalNodes = 0;
     for (const { typeName, nodes } of records) {
+        const tc = typeConfigByName.get(typeName);
         for (const record of nodes) {
             const archived = !!(record.meta.archivedAt as string | undefined);
-            const deleted = false; // trashed nodes are not included — they appear as tombstones if needed
-            components.push(nodeToComponent(record, typeName, opts, archived, deleted));
+            const deleted = false;
+            components.push(nodeToComponent(record, typeName, opts, archived, deleted, tc));
             totalNodes++;
         }
     }
