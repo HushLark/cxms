@@ -53,6 +53,33 @@ export interface SpawnerConfig {
     childrenField?: string;
 }
 
+export type TemporalAnchor = 'date' | 'datetime' | 'daterange';
+
+export interface TemporalConfig {
+    /** Which temporal construct this type uses */
+    anchor: TemporalAnchor;
+    /** Frontmatter field holding the primary date or datetime value */
+    field: string;
+    /**
+     * For 'daterange': the end date/datetime field.
+     * Window relevance is measured from the START date (field), not end.
+     */
+    endField?: string;
+    /** For 'daterange': duration field, used when endField is absent */
+    durationField?: string;
+    /**
+     * Window of importance relative to today.
+     * A node is relevant when today ∈ [node.date − windowDaysBefore, node.date + windowDaysAfter]
+     */
+    windowDaysBefore: number;
+    windowDaysAfter: number;
+    /**
+     * Days after the anchor date to move the node to .archive/.
+     * Undefined = never auto-archive.
+     */
+    deleteAfterDays?: number;
+}
+
 export interface EntityTypeConfig {
     name: string;
     plural: string;
@@ -66,6 +93,8 @@ export interface EntityTypeConfig {
     calendarDateField?: string;     // field key used for calendar start
     calendarEndField?: string;      // field key for period end (date or datetime)
     calendarDurationField?: string; // field key for period duration (duration)
+    /** Temporal window configuration — drives relevance filtering and auto-archive */
+    temporal?: TemporalConfig;
 }
 
 interface EntityTypesFile {
