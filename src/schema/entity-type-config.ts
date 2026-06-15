@@ -85,7 +85,6 @@ export interface EntityTypeConfig {
     plural: string;
     directory: string;
     description?: string;
-    defaultTags?: string[];
     fields: FieldDef[];
     completionField?: string;
     completionValue?: string;

@@ -23,7 +23,7 @@ export interface ContextTreeTrunk {
 }
 
 export interface ContextTreeField { key: string; type: string; values?: string[]; }
-export interface ContextTreeLeaf { key: string; title: string; tags: string[]; summary: string; meta: Record<string, unknown>; content?: string; }
+export interface ContextTreeLeaf { key: string; title: string; summary: string; meta: Record<string, unknown>; content?: string; }
 export interface ContextTreeBranch { entityType: string; plural: string; description: string; fields: ContextTreeField[]; subdirectoryContext: string; leafCount: number; leaves: ContextTreeLeaf[]; }
 export interface ContextTreeEdge { source: string; target: string; edgeType: string; label?: string; }
 export interface ContextTree { trunk: ContextTreeTrunk; branches: ContextTreeBranch[]; edges: ContextTreeEdge[]; }
@@ -38,7 +38,7 @@ function fieldToTreeField(f: FieldDef): ContextTreeField {
 }
 
 function indexNodeToLeaf(node: IndexNode, includeContent?: string): ContextTreeLeaf {
-    return { key: `${node.type}:${node.id}`, title: node.title, tags: node.tags, summary: node.summary, meta: node.meta, content: includeContent };
+    return { key: `${node.type}:${node.id}`, title: node.title, summary: node.summary, meta: node.meta, content: includeContent };
 }
 
 async function buildTrunk(globals: Record<string, string>): Promise<ContextTreeTrunk> {

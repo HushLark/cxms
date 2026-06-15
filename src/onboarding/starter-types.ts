@@ -21,7 +21,6 @@ const TYPE_TASK: EntityTypeConfig = {
     completionField: 'status',
     completionValue: 'done',
     calendarDateField: 'due',
-    defaultTags: [],
 };
 
 const TYPE_NOTE: EntityTypeConfig = {
@@ -32,7 +31,6 @@ const TYPE_NOTE: EntityTypeConfig = {
     fields: [
         { key: 'category', type: 'string', label: 'Category' },
     ],
-    defaultTags: [],
 };
 
 const TYPE_EVENT: EntityTypeConfig = {
@@ -47,7 +45,6 @@ const TYPE_EVENT: EntityTypeConfig = {
         { key: 'participants', type: 'array',      label: 'Attendees' },
     ],
     calendarDateField: 'starts_at',
-    defaultTags: [],
 };
 
 // ── Role-specific supplemental types ─────────────────────────────────────────
@@ -65,7 +62,6 @@ const TYPE_PERSON: EntityTypeConfig = {
         { key: 'birthday',     type: 'date-fixed', label: 'Birthday' },
         { key: 'last_contact', type: 'date',       label: 'Last contact date' },
     ],
-    defaultTags: [],
 };
 
 const TYPE_COMPANY: EntityTypeConfig = {
@@ -83,7 +79,6 @@ const TYPE_COMPANY: EntityTypeConfig = {
         { key: 'location',        type: 'string',    label: 'Location' },
         { key: 'primary_contact', type: 'reference', label: 'Primary Contact', targetType: 'person' },
     ],
-    defaultTags: [],
 };
 
 const TYPE_GOAL: EntityTypeConfig = {
@@ -100,7 +95,6 @@ const TYPE_GOAL: EntityTypeConfig = {
     completionField: 'status',
     completionValue: 'achieved',
     calendarDateField: 'target_date',
-    defaultTags: [],
 };
 
 // Parent-specific
@@ -119,7 +113,6 @@ const TYPE_ACTIVITY: EntityTypeConfig = {
         { key: 'season_end', type: 'date',   label: 'Season end date' },
     ],
     calendarDateField: 'season_end',
-    defaultTags: [],
 };
 
 // Educator/coach-specific
@@ -135,7 +128,6 @@ const TYPE_PLAYER: EntityTypeConfig = {
         { key: 'parent_email',  type: 'string', label: 'Parent/guardian email' },
         { key: 'notes',         type: 'string', label: 'Development notes' },
     ],
-    defaultTags: [],
 };
 
 const TYPE_PRACTICE: EntityTypeConfig = {
@@ -151,7 +143,6 @@ const TYPE_PRACTICE: EntityTypeConfig = {
         { key: 'attendance',  type: 'number', label: 'Players present' },
     ],
     calendarDateField: 'date',
-    defaultTags: [],
 };
 
 // Professional-specific
@@ -171,7 +162,6 @@ const TYPE_PROJECT: EntityTypeConfig = {
     completionField: 'status',
     completionValue: 'complete',
     calendarDateField: 'target_date',
-    defaultTags: [],
 };
 
 const TYPE_DECISION: EntityTypeConfig = {
@@ -184,7 +174,6 @@ const TYPE_DECISION: EntityTypeConfig = {
         { key: 'date',       type: 'date', label: 'Decision date' },
         { key: 'driver',     type: 'string', label: 'Who decided' },
     ],
-    defaultTags: [],
 };
 
 // ── Role → type set ───────────────────────────────────────────────────────────

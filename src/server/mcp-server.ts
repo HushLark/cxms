@@ -7,7 +7,7 @@
 // Tools:
 //   Context Types:  list_types, get_type, create_type, update_type, delete_type
 //   Context Nodes:  list_nodes, get_node, create_node, update_node, delete_node
-//   Search:         search, batch_get_nodes, search_by_tag, search_by_date_range
+//   Search:         search, batch_get_nodes, search_by_date_range
 //   Context:        get_node_summary, count_nodes, get_moment, get_context_tree
 //   Collections:    list_collections, get_collection, set_collection_item,
 //                   remove_collection_item
@@ -203,7 +203,6 @@ function registerTools(server: McpServer): void {
                     required: z.boolean().optional(),
                     values: z.array(z.string()).optional(),
                 })).describe('Field definitions'),
-                defaultTags: z.array(z.string()).optional(),
                 completionField: z.string().optional().describe('Field name that marks completion'),
                 completionValue: z.string().optional().describe('Value that means "done"'),
                 calendarDateField: z.string().optional().describe('Field for calendar placement'),
@@ -217,7 +216,6 @@ function registerTools(server: McpServer): void {
                     directory: params.directory,
                     description: params.description,
                     fields: params.fields,
-                    defaultTags: params.defaultTags,
                     completionField: params.completionField,
                     completionValue: params.completionValue,
                     calendarDateField: params.calendarDateField,
@@ -245,7 +243,6 @@ function registerTools(server: McpServer): void {
                         required: z.boolean().optional(),
                         values: z.array(z.string()).optional(),
                     })).optional(),
-                    defaultTags: z.array(z.string()).optional(),
                     completionField: z.string().optional(),
                     completionValue: z.string().optional(),
                     calendarDateField: z.string().optional(),
@@ -282,20 +279,17 @@ function registerTools(server: McpServer): void {
     server.registerTool(
         'list_nodes',
         {
-            description: 'List context nodes of a given type. Returns titles, IDs, tags, and key metadata.',
+            description: 'List context nodes of a given type. Returns titles, IDs, and key metadata.',
             inputSchema: z.object({
                 type: z.string().describe('Context type (e.g. "task", "event", "note")'),
                 status: z.string().optional().describe('Filter by status field'),
-                tag: z.string().optional().describe('Filter by tag'),
                 limit: z.number().optional().describe('Max results (default all)'),
                 offset: z.number().optional().describe('Skip N results'),
             }),
         },
-        async ({ type, status, tag, limit, offset }) => {
+        async ({ type, status, limit, offset }) => {
             try {
-                const filters: { tags?: string[]; metaOnly?: boolean } = {};
-                if (tag) filters.tags = [tag];
-                let entities = await listEntities(type, filters);
+                let entities = await listEntities(type);
                 if (status) {
                     entities = entities.filter(e => String(e.meta.status) === status);
                 }
@@ -304,11 +298,10 @@ function registerTools(server: McpServer): void {
                 return ok(entities.map(e => ({
                     id: e.meta.id as string,
                     title: e.meta.title as string,
-                    tags: e.meta.tags as string[],
                     summary: e.meta.summary as string | undefined,
                     ...Object.fromEntries(
                         Object.entries(e.meta).filter(([k]) =>
-                            !['id', 'title', 'tags', 'summary', 'entityType'].includes(k)),
+                            !['id', 'title', 'summary', 'entityType'].includes(k)),
                     ),
                 })));
             } catch (e) { return err(e); }
@@ -345,11 +338,10 @@ function registerTools(server: McpServer): void {
                 type: z.string().describe('Context type'),
                 title: z.string().describe('Node title'),
                 content: z.string().optional().describe('Markdown body'),
-                tags: z.array(z.string()).optional().describe('Tags'),
                 fields: z.record(z.string(), z.unknown()).optional().describe('Additional frontmatter fields'),
             }),
         },
-        async ({ type, title, content, tags, fields }) => {
+        async ({ type, title, content, fields }) => {
             try {
                 const typeConfig = await getEntityType(type);
                 if (!typeConfig) return err(`Unknown context type: ${type}`);
@@ -361,7 +353,6 @@ function registerTools(server: McpServer): void {
                     title,
                     entityType: type,
                     created: now,
-                    tags: tags || typeConfig.defaultTags || [],
                     ...fields,
                 };
 
@@ -387,23 +378,16 @@ function registerTools(server: McpServer): void {
                 id: z.string().describe('Node ID or title'),
                 title: z.string().optional().describe('New title'),
                 content: z.string().optional().describe('New markdown body'),
-                tags: z.array(z.string()).optional().describe('Replace tags'),
-                add_tags: z.array(z.string()).optional().describe('Add tags to existing'),
                 fields: z.record(z.string(), z.unknown()).optional().describe('Fields to set/update'),
             }),
         },
-        async ({ type, id, title, content, tags, add_tags, fields }) => {
+        async ({ type, id, title, content, fields }) => {
             try {
                 const entity = await findEntityByTitle(type, id);
                 if (!entity) return err(`Node not found: ${type}/${id}`);
 
                 const meta = { ...entity.meta };
                 if (title) meta.title = title;
-                if (tags) meta.tags = tags;
-                if (add_tags) {
-                    const existing = Array.isArray(meta.tags) ? meta.tags : [];
-                    meta.tags = [...new Set([...existing, ...add_tags])];
-                }
                 if (fields) Object.assign(meta, fields);
 
                 const typeConfig = await getEntityType(type);
@@ -444,9 +428,9 @@ function registerTools(server: McpServer): void {
     server.registerTool(
         'search',
         {
-            description: 'Full-text BM25 search across context nodes. Returns ranked previews: title, tags, summary, key custom fields, and a body snippet. Use batch_get_nodes to fetch full content for selected results.',
+            description: 'Full-text BM25 + semantic search across context nodes. Returns ranked previews: title, summary, key custom fields, and a body snippet. Use batch_get_nodes to fetch full content for selected results.',
             inputSchema: z.object({
-                query: z.string().describe('Search query — keywords, phrases, or tag:value filters'),
+                query: z.string().describe('Search query — keywords or phrases'),
                 type: z.string().optional().describe('Filter to a single context type'),
                 limit: z.number().optional().describe('Max results (default 20)'),
                 snippetLength: z.number().optional().describe('Body preview length in chars (default 200, max 500)'),
@@ -474,7 +458,6 @@ function registerTools(server: McpServer): void {
                         title: r.meta.title as string,
                         score: r.score,
                         summary: r.meta.summary as string | undefined,
-                        tags: r.meta.tags as string[],
                         fields,
                         bodySnippet: r.content?.slice(0, snipLen).replace(/\n+/g, ' ').trim() || '',
                     };
@@ -513,7 +496,7 @@ function registerTools(server: McpServer): void {
                         }
                         results.push({
                             id: entity.meta.id, title: entity.meta.title, type: ref.type,
-                            tags: entity.meta.tags || [], summary: entity.meta.summary,
+                            summary: entity.meta.summary,
                             created: entity.meta.created, updated: entity.meta.updated,
                             ...fields, content: entity.content,
                             references: entity.meta.references || entity.meta.links || [],
@@ -521,35 +504,6 @@ function registerTools(server: McpServer): void {
                     } catch (e) { errors.push({ ...ref, error: e instanceof Error ? e.message : String(e) }); }
                 }
                 return ok({ count: results.length, nodes: results, errors });
-            } catch (e) { return err(e); }
-        },
-    );
-
-    server.registerTool(
-        'search_by_tag',
-        {
-            description: 'Find all context nodes with a specific tag, optionally filtered by type.',
-            inputSchema: z.object({
-                tag: z.string().describe('Tag to search for'),
-                type: z.string().optional().describe('Filter to context type'),
-            }),
-        },
-        async ({ tag, type }) => {
-            try {
-                const typeNames = type ? [type] : (await loadEntityTypes()).map(t => t.name);
-                const results: Array<{ type: string; id: string; title: string; tags: string[] }> = [];
-                for (const t of typeNames) {
-                    const entities = await listEntities(t, { tags: [tag] });
-                    for (const e of entities) {
-                        results.push({
-                            type: t,
-                            id: e.meta.id as string,
-                            title: e.meta.title as string,
-                            tags: e.meta.tags as string[],
-                        });
-                    }
-                }
-                return ok(results);
             } catch (e) { return err(e); }
         },
     );
@@ -596,7 +550,7 @@ function registerTools(server: McpServer): void {
     server.registerTool(
         'get_node_summary',
         {
-            description: 'Get a concise summary of a context node — title, tags, key fields, and first 200 chars of content.',
+            description: 'Get a concise summary of a context node — title, key fields, and first 200 chars of content.',
             inputSchema: z.object({
                 type: z.string().describe('Context type'),
                 id: z.string().describe('Node ID or title'),
@@ -613,13 +567,12 @@ function registerTools(server: McpServer): void {
                     id: entity.meta.id as string,
                     title: entity.meta.title as string,
                     type,
-                    tags: entity.meta.tags as string[],
                     summary: (entity.meta.summary as string) || snippet,
                     created: entity.meta.created as string,
                     updated: entity.meta.updated as string | undefined,
                     ...Object.fromEntries(
                         Object.entries(entity.meta).filter(([k]) =>
-                            !['id', 'title', 'entityType', 'tags', 'summary', 'created', 'updated'].includes(k)),
+                            !['id', 'title', 'entityType', 'summary', 'created', 'updated'].includes(k)),
                     ),
                 });
             } catch (e) { return err(e); }

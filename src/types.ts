@@ -26,8 +26,6 @@ export interface ContextType {
     directory: string;
     /** Human-readable description of this type */
     description?: string;
-    /** Default tags applied to new nodes */
-    defaultTags?: string[];
     /** Schema fields that nodes must validate against */
     fields: FieldDef[];
     /** Field used to mark completion (e.g. 'status') */
@@ -62,8 +60,6 @@ export interface ContextNodeMeta {
     created: string;
     /** ISO 8601 last-updated timestamp */
     updated?: string;
-    /** Tags for cross-referencing */
-    tags: string[];
     /** Short description / summary */
     description?: string;
     /** How this node was created */
@@ -82,7 +78,6 @@ export interface NodeSummary {
     name: string;
     contextType: string;
     description?: string;
-    tags: string[];
     created: string;
     updated?: string;
 }

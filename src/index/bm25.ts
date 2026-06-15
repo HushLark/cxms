@@ -2,7 +2,7 @@
 // BM25 Inverted Index
 // ─────────────────────────────────────────────────────────────────────────────
 // Full-text search with BM25 scoring over tokenized + stemmed content.
-// Indexes title, tags, summary, body, and custom field values.
+// Indexes title, summary, body, and custom field values.
 // Zero external dependencies.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -57,7 +57,6 @@ const B = 0.75;         // length normalization
 // Field weight multipliers — title matches matter more than body
 const FIELD_WEIGHTS = {
     title: 5.0,
-    tags: 3.0,
     summary: 2.0,
     fields: 1.5,
     body: 1.0,
@@ -100,7 +99,6 @@ export class BM25Index {
         type: string,
         fields: {
             title: string;
-            tags: string[];
             summary: string;
             body: string;
             customFields?: Record<string, unknown>;
@@ -128,7 +126,6 @@ export class BM25Index {
         };
 
         addTokens(fields.title, FIELD_WEIGHTS.title);
-        for (const tag of fields.tags) addTokens(tag, FIELD_WEIGHTS.tags);
         addTokens(fields.summary, FIELD_WEIGHTS.summary);
         addTokens(fields.body, FIELD_WEIGHTS.body);
 

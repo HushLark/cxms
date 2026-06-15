@@ -188,7 +188,6 @@ async function cmdInit(): Promise<void> {
     const rootContext = `---
 title: "${name}"
 created: ${today}
-tags: [context, system, root]
 ---
 
 # ${name}

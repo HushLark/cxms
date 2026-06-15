@@ -24,7 +24,7 @@ function serializeTrunk(tree: ContextTree): string {
 
 function serializeLeafMeta(leaf: ContextTreeLeaf): string {
     const metaParts: string[] = [];
-    const skipKeys = new Set(['id', 'title', 'entityType', 'created', 'updated', 'tags', 'summary', '_filepath', 'links', 'bodySnippet']);
+    const skipKeys = new Set(['id', 'title', 'entityType', 'created', 'updated', 'summary', '_filepath', 'links', 'bodySnippet']);
     for (const [key, value] of Object.entries(leaf.meta)) {
         if (skipKeys.has(key)) continue;
         if (value === undefined || value === null || value === '') continue;
@@ -32,9 +32,8 @@ function serializeLeafMeta(leaf: ContextTreeLeaf): string {
         metaParts.push(`${key}=${value}`);
     }
     const metaStr = metaParts.length > 0 ? ` [${metaParts.join(', ')}]` : '';
-    const tagsStr = leaf.tags.length > 0 ? ` ${leaf.tags.map(t => `#${t}`).join(' ')}` : '';
     const summaryStr = leaf.summary ? ` — ${leaf.summary}` : '';
-    return `- "${leaf.title}"${metaStr}${tagsStr}${summaryStr}`;
+    return `- "${leaf.title}"${metaStr}${summaryStr}`;
 }
 
 function serializeBranch(branch: ContextTreeBranch): string {
@@ -51,8 +50,6 @@ function serializeBranch(branch: ContextTreeBranch): string {
         for (const leaf of branch.leaves) {
             if (leaf.content !== undefined) {
                 lines.push(`#### ${leaf.title} (${leaf.key})`);
-                const tagsStr = leaf.tags.length > 0 ? `Tags: ${leaf.tags.map(t => `#${t}`).join(' ')}` : '';
-                if (tagsStr) lines.push(tagsStr);
                 if (leaf.summary) lines.push(`Summary: ${leaf.summary}`);
                 if (leaf.content) { lines.push(''); lines.push(leaf.content); }
                 lines.push('');

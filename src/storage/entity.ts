@@ -31,7 +31,6 @@ export interface EntityMeta {
     entityType: EntityTypeName;
     created: string;
     updated?: string;
-    tags: string[];
     description?: string;
     /** @deprecated use name */ title?: string;
     /** @deprecated use description */ summary?: string;
@@ -41,7 +40,7 @@ export const CORE_FRONTMATTER_KEYS = new Set([
     'id', 'entityType', 'contextType',
     'name', 'title',
     'description', 'summary',
-    'tags', 'created', 'updated', 'source', 'references',
+    'created', 'updated', 'source', 'references',
 ]);
 
 function parseFieldScalar(raw: string): unknown {
@@ -131,14 +130,12 @@ export function entityFilename(title: string, id: string): string {
 export function createEntityMeta(
     entityType: EntityTypeName,
     title: string,
-    opts: { tags?: string[] } = {},
 ): EntityMeta {
     return {
         id: generateNodeId(),
         name: title,
         entityType,
         created: new Date().toISOString(),
-        tags: opts.tags ?? [],
     };
 }
 
@@ -339,14 +336,10 @@ export async function findEntityByTitle(
 export async function searchEntities(
     query: string,
     entityType?: EntityTypeName,
-    options?: { tags?: string[] },
 ): Promise<{ filepath: string; meta: Record<string, unknown>; content: string; score: number }[]> {
     const index = getEntityIndex();
     if (index.isBuilt) {
-        const tagPrefix = (options?.tags ?? []).map(t => `tag:${t}`).join(' ');
-        const fullQuery = tagPrefix ? `${tagPrefix} ${query}` : query;
-
-        const keywordResults = index.search(fullQuery, entityType);
+        const keywordResults = index.search(query, entityType);
 
         const embeddingIndex = getEmbeddingIndex();
         const mergedScores = new Map<string, { node: typeof keywordResults[0]['node']; score: number }>();
@@ -393,20 +386,8 @@ export async function searchEntities(
     }
 
     // Fallback: filesystem scan
-    const rawTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const tagTokens: string[] = [];
-    const searchTokens: string[] = [];
-    for (const token of rawTokens) {
-        if (token.startsWith('tag:') || token.startsWith('tags:')) {
-            const tagValue = token.slice(token.indexOf(':') + 1);
-            if (tagValue) tagTokens.push(tagValue);
-        } else {
-            searchTokens.push(token);
-        }
-    }
-    const allFilterTags = [...tagTokens, ...(options?.tags ?? []).map(t => t.toLowerCase())];
-
-    if (searchTokens.length === 0 && allFilterTags.length === 0) return [];
+    const searchTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (searchTokens.length === 0) return [];
 
     let allEntities: { filepath: string; meta: Record<string, unknown>; content: string }[];
     if (entityType) {
@@ -417,21 +398,9 @@ export async function searchEntities(
         allEntities = lists.flat();
     }
 
-    if (allFilterTags.length > 0) {
-        allEntities = allEntities.filter(e => {
-            const entityTags = ((e.meta.tags as string[]) ?? []).map(t => t.toLowerCase());
-            return allFilterTags.some(ft => entityTags.includes(ft));
-        });
-    }
-
-    if (searchTokens.length === 0) {
-        return allEntities.map(e => ({ filepath: e.filepath, meta: e.meta, content: e.content, score: 1 }));
-    }
-
     const results: { filepath: string; meta: Record<string, unknown>; content: string; score: number }[] = [];
     for (const entity of allEntities) {
         const title = ((entity.meta.title as string) ?? '').toLowerCase();
-        const tags = ((entity.meta.tags as string[]) ?? []).map(t => t.toLowerCase());
         const body = entity.content.toLowerCase();
 
         let score = 0;
@@ -440,7 +409,6 @@ export async function searchEntities(
         for (const token of searchTokens) {
             let matched = false;
             if (title.includes(token)) { score += 3; matched = true; }
-            if (tags.some(tag => tag.includes(token))) { score += 2; matched = true; }
             if (body.includes(token)) { score += 1; matched = true; }
             if (!matched) { allMatched = false; break; }
         }
@@ -456,7 +424,7 @@ export async function searchEntities(
 
 export async function listEntities(
     entityType: EntityTypeName,
-    options?: { tags?: string[]; metaOnly?: boolean; includeArchived?: boolean },
+    options?: { metaOnly?: boolean; includeArchived?: boolean },
 ): Promise<{ filepath: string; meta: Record<string, unknown>; content: string }[]> {
     const index = getEntityIndex();
     if (index.isBuilt) {
@@ -464,14 +432,6 @@ export async function listEntities(
 
         if (!options?.includeArchived) {
             nodes = nodes.filter(n => !n.meta.archivedAt);
-        }
-
-        if (options?.tags && options.tags.length > 0) {
-            const filterTags = options.tags.map(t => t.toLowerCase());
-            nodes = nodes.filter(n => {
-                const nodeTags = n.tags.map(t => t.toLowerCase());
-                return filterTags.some(ft => nodeTags.includes(ft));
-            });
         }
 
         if (options?.metaOnly) {
@@ -520,15 +480,6 @@ export async function listEntities(
         debug('entities', err);
     }
 
-    let filtered = options?.includeArchived ? entities : entities.filter(e => !e.meta.archivedAt);
-
-    if (options?.tags && options.tags.length > 0) {
-        const filterTags = options.tags.map(t => t.toLowerCase());
-        filtered = filtered.filter(e => {
-            const entityTags = ((e.meta.tags as string[]) ?? []).map(t => t.toLowerCase());
-            return filterTags.some(ft => entityTags.includes(ft));
-        });
-    }
-
+    const filtered = options?.includeArchived ? entities : entities.filter(e => !e.meta.archivedAt);
     return filtered;
 }

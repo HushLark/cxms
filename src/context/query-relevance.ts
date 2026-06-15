@@ -166,7 +166,7 @@ export function filterCatalogNodes<T extends { key: string; group: string }>(
                 key === `update_${et.name}` || key === `delete_${et.name}` ||
                 key === `complete_${et.name}` || key === `sort_${et.plural}` ||
                 key === `load_vault_context_${et.name}` || key === `review_${et.name}` ||
-                key === `questions_${et.name}` || key === `add_tag_${et.name}` ||
+                key === `questions_${et.name}` ||
                 key.startsWith(`set_${et.name}_`)
             ) {
                 return relevantTypeNames.has(et.name);

@@ -119,7 +119,6 @@ ${completionNote}
         description: config.description,
         fields: config.fields,
     };
-    if (config.defaultTags) meta.defaultTags = config.defaultTags;
     if (config.completionField) meta.completionField = config.completionField;
     if (config.completionValue) meta.completionValue = config.completionValue;
     if (config.spawner) meta.spawner = config.spawner;
@@ -201,7 +200,7 @@ function generateExamples(config: EntityTypeConfig): string {
             'location: Conference Room A', '```', '');
     } else if (config.name === 'note') {
         lines.push('## Example: Project Ideas', '', '```yaml', 'title: Project Ideas',
-            'tags: [ideas, brainstorm]', '```', '',
+            '```', '',
             'Body content goes here in Markdown.', '');
     } else {
         lines.push(`_Add examples of ${config.plural} here._`, '');

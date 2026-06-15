@@ -190,7 +190,6 @@ function nodeToComponent(
     const uid = `${m.id}@${opts.vaultId}`;
     const created = toIcsDate(m.created as string);
     const updated = toIcsDate((m.updated ?? m.created) as string);
-    const tags = Array.isArray(m.tags) ? (m.tags as string[]).join(',') : '';
     const description = record.content
         ? record.content.replace(/\n/g, '\\n').slice(0, 65535)
         : '';
@@ -199,7 +198,7 @@ function nodeToComponent(
 
     const systemKeys = new Set([
         'id', 'title', 'entityType', 'contextType', 'created', 'updated',
-        'tags', 'summary', 'references', 'archivedAt', '_filepath',
+        'summary', 'references', 'archivedAt', '_filepath',
         'status', 'priority', 'dueDate', 'startDate', 'location', 'duration',
     ]);
 
@@ -215,7 +214,6 @@ function nodeToComponent(
             prop('PRIORITY', mapPriority(m.priority as string)),
             prop('STATUS', icsStatus),
             ext ? prop('X-CXF-STATUS-EXT', ext) : '',
-            tags ? prop('CATEGORIES', tags) : '',
             prop('CREATED', created),
             prop('LAST-MODIFIED', updated),
             linkLines || '',
@@ -240,7 +238,6 @@ function nodeToComponent(
             m.endDate ? prop('DTEND', toIcsDate(m.endDate as string)) : '',
             m.duration ? prop('DURATION', String(m.duration)) : '',
             m.location ? prop('LOCATION', String(m.location).replace(/,/g, '\\,')) : '',
-            tags ? prop('CATEGORIES', tags) : '',
             prop('CREATED', created),
             prop('LAST-MODIFIED', updated),
             linkLines || '',
@@ -261,7 +258,6 @@ function nodeToComponent(
             prop('SUMMARY', m.title as string),
             description ? prop('DESCRIPTION', description) : '',
             prop('DTSTART', created.slice(0, 8)),
-            tags ? prop('CATEGORIES', tags) : '',
             prop('CREATED', created),
             prop('LAST-MODIFIED', updated),
             linkLines || '',
@@ -295,7 +291,6 @@ function nodeToComponent(
         startVal ? prop('DTSTART', toIcsDate(String(startVal))) : '',
         endVal ? prop('DTEND', toIcsDate(String(endVal))) : '',
         durVal ? prop('DURATION', String(durVal)) : '',
-        tags ? prop('CATEGORIES', tags) : '',
         prop('CREATED', created),
         prop('LAST-MODIFIED', updated),
         prop('X-CXF-ID', m.id as string),

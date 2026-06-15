@@ -30,7 +30,6 @@ export async function createFoundationIfNeeded(dir: string): Promise<void> {
     await storage.writeFile(marker, `---
 title: "${name}"
 created: ${today}
-tags: [context, system, root]
 ---
 
 # ${name}
@@ -107,7 +106,6 @@ title: "${name}"
 created: ${today}
 owner: "${answers.name}"
 role: "${answers.role}"
-tags: [context, system, root]
 ---
 
 # ${name}

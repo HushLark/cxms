@@ -19,7 +19,6 @@ export interface IndexNode {
     type: EntityTypeName;
     title: string;
     filepath: string;
-    tags: string[];
     summary: string;
     bodySnippet: string;
     meta: Record<string, unknown>;
@@ -86,15 +85,14 @@ export class EntityIndex {
                         const id = (meta.id as string) || paths.basename(file, '.md');
                         const key = EntityIndex.key(entityType, id);
                         const title = (meta.title as string) || id;
-                        const tags = Array.isArray(meta.tags) ? (meta.tags as string[]) : [];
                         const summary = (meta.summary as string) ?? '';
                         this.nodes.set(key, {
                             id, type: entityType, title, filepath,
-                            tags, summary,
+                            summary,
                             bodySnippet: content.slice(0, 500), meta,
                         });
                         this.bm25.addDocument(key, entityType, {
-                            title, tags, summary, body: content,
+                            title, summary, body: content,
                             customFields: meta,
                         });
                     } catch (err) {
@@ -163,7 +161,7 @@ export class EntityIndex {
         return this._builtAt !== null;
     }
 
-    async addOrUpdate(type: EntityTypeName, id: string, title: string, filepath: string, tags?: string[], summary?: string): Promise<void> {
+    async addOrUpdate(type: EntityTypeName, id: string, title: string, filepath: string, summary?: string): Promise<void> {
         const { storage } = getPlatform();
         const key = EntityIndex.key(type, id);
 
@@ -176,9 +174,8 @@ export class EntityIndex {
             meta = parsed.meta;
         } catch { /* keep defaults */ }
 
-        const nodeTags = tags ?? [];
         const nodeSummary = summary ?? '';
-        this.nodes.set(key, { id, type, title, filepath, tags: nodeTags, summary: nodeSummary, bodySnippet, meta });
+        this.nodes.set(key, { id, type, title, filepath, summary: nodeSummary, bodySnippet, meta });
         this.edges = this.edges.filter(e => e.source !== key);
 
         try {
@@ -186,7 +183,7 @@ export class EntityIndex {
             const { meta, content } = parseEntity(filepath, raw);
 
             this.bm25.addDocument(key, type, {
-                title, tags: nodeTags, summary: nodeSummary,
+                title, summary: nodeSummary,
                 body: content, customFields: meta,
             });
 
@@ -224,51 +221,15 @@ export class EntityIndex {
     }
 
     search(query: string, entityType?: EntityTypeName): IndexSearchResult[] {
-        const rawTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-        const tagTokens: string[] = [];
-        const searchTokens: string[] = [];
-        for (const token of rawTokens) {
-            if (token.startsWith('tag:') || token.startsWith('tags:')) {
-                const tagValue = token.slice(token.indexOf(':') + 1);
-                if (tagValue) tagTokens.push(tagValue);
-            } else {
-                searchTokens.push(token);
-            }
-        }
-
-        if (searchTokens.length === 0 && tagTokens.length === 0) return [];
-
-        // Tag-only query: return all matching nodes
-        if (searchTokens.length === 0) {
-            const results: IndexSearchResult[] = [];
-            for (const node of this.nodes.values()) {
-                if (entityType && node.type !== entityType) continue;
-                const tagsLower = node.tags.map(t => t.toLowerCase());
-                if (tagTokens.some(ft => tagsLower.includes(ft))) {
-                    results.push({ node, score: 1 });
-                }
-            }
-            return results;
-        }
+        const searchTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+        if (searchTokens.length === 0) return [];
 
         // BM25 full-text search
-        const searchQuery = searchTokens.join(' ');
-        const bm25Results = this.bm25.search(searchQuery, entityType);
-
-        // If tag filters are present, filter BM25 results by tag
-        let filtered = bm25Results;
-        if (tagTokens.length > 0) {
-            filtered = bm25Results.filter(r => {
-                const node = this.nodes.get(r.key);
-                if (!node) return false;
-                const tagsLower = node.tags.map(t => t.toLowerCase());
-                return tagTokens.some(ft => tagsLower.includes(ft));
-            });
-        }
+        const bm25Results = this.bm25.search(searchTokens.join(' '), entityType);
 
         // Map BM25 results to IndexSearchResult
         const results: IndexSearchResult[] = [];
-        for (const r of filtered) {
+        for (const r of bm25Results) {
             const node = this.nodes.get(r.key);
             if (node) results.push({ node, score: r.score });
         }
