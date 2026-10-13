@@ -2,7 +2,7 @@
 // CxMS — MCP Server
 // ─────────────────────────────────────────────────────────────────────────────
 // Exposes the CxMS as an MCP tool server so any MCP-compatible client
-// (Claude Desktop, Cursor, Phaibel, etc.) can manage Foundation data.
+// (Claude Desktop, Cursor, etc.) can manage Foundation data.
 //
 // Tools:
 //   Context Types:  list_types, get_type, create_type, update_type, delete_type

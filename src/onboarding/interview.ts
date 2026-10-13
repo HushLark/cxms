@@ -115,7 +115,7 @@ export async function runInteractiveInterview(): Promise<OnboardingAnswers> {
         // Welcome
         blank();
         box([
-            c('bold', 'Welcome to Phaibel + CxMS'),
+            c('bold', 'Welcome to CxMS'),
             c('gray',  'Let\'s set up your personal assistant'),
             c('gray',  'Press Enter to skip any question'),
         ]);
@@ -276,8 +276,8 @@ export async function runInteractiveInterview(): Promise<OnboardingAnswers> {
             'friend',
         );
 
-        const agentNameInput = await ask(rl, 'What should your assistant be called? (default: Phaibel)');
-        const agentName = agentNameInput || 'Phaibel';
+        const agentNameInput = await ask(rl, 'What should your assistant be called? (default: Assistant)');
+        const agentName = agentNameInput || 'Assistant';
 
         // Timezone
         blank();

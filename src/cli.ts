@@ -1,24 +1,19 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────────
-// cxms / phaibel — Context Management System + Phaibel personal agent
+// cxms — Context Management System
 // ─────────────────────────────────────────────────────────────────────────────
-// Usage (cxms):
-//   cxms                          Start with config from ~/.cxms/config.json
+// Usage:
+//   cxms                          Start the server in the foreground
 //   cxms --port 4000              Override port
 //   cxms --foundation /path/to/f  Override foundation root
 //   cxms --no-auth                Disable bearer token authentication
 //   cxms init                     Initialize a new Foundation in the current directory
+//   cxms setup                    Guided setup — choose vault location + interview
 //   cxms onboard                  Run the first-time setup interview
+//   cxms start | stop | restart   Manage the background server
+//   cxms status                   Show whether the background server is running
 //   cxms token                    Print the bearer token
 //   cxms token --regenerate       Generate a new bearer token
-//
-// Usage (phaibel):
-//   phaibel init                  First-time setup — choose vault location + interview
-//   phaibel start                 Start the server in the background
-//   phaibel stop                  Stop the background server
-//   phaibel restart               Restart the background server
-//   phaibel status                Show whether the server is running
-//   phaibel token                 Print the bearer token
 // ─────────────────────────────────────────────────────────────────────────────
 
 import http from 'http';
@@ -53,7 +48,6 @@ import {
 } from './server/models-config.js';
 
 const DEFAULT_PORT = 3800;
-const IS_PHAIBEL = path.basename(process.argv[1] || '').startsWith('phaibel');
 
 // ── Arg parsing ─────────────────────────────────────────────────────────────
 
@@ -73,7 +67,7 @@ function parseArgs(argv: string[]): {
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (
-            arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'phaibel-init' ||
+            arg === 'init' || arg === 'token' || arg === 'onboard' || arg === 'setup' ||
             arg === 'start' || arg === 'stop' || arg === 'restart' || arg === 'status' ||
             arg === 'keys' || arg === 'models'
         ) {
@@ -102,51 +96,34 @@ function parseArgs(argv: string[]): {
 }
 
 function printHelp(): void {
-    if (IS_PHAIBEL) {
-        console.log(`
-phaibel — Personal AI agent powered by CxMS
-
-Usage:
-  phaibel init                      First-time setup — choose vault location + interview
-  phaibel start                     Start the server in the background
-  phaibel stop                      Stop the background server
-  phaibel restart                   Restart the background server
-  phaibel status                    Show whether the server is running
-  phaibel token                     Print the bearer token
-  phaibel token --regenerate        Generate a new bearer token
-
-API keys:
-  phaibel keys                      List configured API keys (masked)
-  phaibel keys add <vendor> [key]   Add or update a key (prompts if key omitted)
-  phaibel keys remove <vendor>      Remove a key
-  Vendors: anthropic, openai, gemini, deepseek
-
-Models:
-  phaibel models                    Show current model configuration
-  phaibel models use <vendor>       Switch to a vendor's default model suite
-  phaibel models set <role> <model> Override a single model role
-  Roles: chat, fast, embed
-
-Options:
-  --port, -p <port>                 Port to listen on (default: 3800)
-  --foundation, -f <path>           Vault directory override
-  --no-auth                         Disable bearer token authentication
-  --help, -h                        Show this help
-
-Files:
-  ~/.cxms/phaibel.pid               PID of the background server process
-  ~/.cxms/phaibel.log               Server log output
-`);
-    } else {
-        console.log(`
+    console.log(`
 cxms — Context Management System server
 
 Usage:
-  cxms                              Start the server
+  cxms                              Start the server in the foreground
   cxms init                         Initialize a Foundation in the current directory
+  cxms setup                        Guided setup — choose vault location + interview
   cxms onboard                      Run the first-time setup interview
   cxms token                        Print the bearer token
   cxms token --regenerate           Generate a new bearer token
+
+Background server:
+  cxms start                        Start the server in the background
+  cxms stop                         Stop the background server
+  cxms restart                      Restart the background server
+  cxms status                       Show whether the server is running
+
+API keys:
+  cxms keys                         List configured API keys (masked)
+  cxms keys add <vendor> [key]      Add or update a key (prompts if key omitted)
+  cxms keys remove <vendor>         Remove a key
+  Vendors: anthropic, openai, gemini, deepseek
+
+Models:
+  cxms models                       Show current model configuration
+  cxms models use <vendor>          Switch to a vendor's default model suite
+  cxms models set <role> <model>    Override a single model role
+  Roles: chat, fast, embed
 
 Options:
   --port, -p <port>                 Port to listen on (default: 3800)
@@ -159,13 +136,14 @@ Options:
 Configuration:
   ~/.cxms/config.json               { "foundationRoot": "/path", "port": 3800 }
   ~/.cxms/token                     Bearer token (auto-generated)
+  ~/.cxms/cxms.pid                  PID of the background server process
+  ~/.cxms/cxms.log                  Background server log output
 
 Endpoints:
   GET  /cx/health                   Health check (no auth)
   *    /cx/*                        REST API (bearer token required)
   *    /mcp                         MCP tool server
 `);
-    }
 }
 
 // ── Daemon helpers ───────────────────────────────────────────────────────────
@@ -177,16 +155,19 @@ async function getCxmsDir(): Promise<string> {
     return dir;
 }
 
+// phaibel.pid is the legacy name, checked so a daemon started by an older version can still be stopped
+const PID_FILES = ['cxms.pid', 'phaibel.pid'];
+
 async function getRunningPid(): Promise<number | null> {
-    try {
-        const dir = await getCxmsDir();
-        const pidFile = path.join(dir, 'phaibel.pid');
-        const pid = parseInt(await fs.readFile(pidFile, 'utf8'), 10);
-        process.kill(pid, 0); // throws if not running
-        return pid;
-    } catch {
-        return null;
+    const dir = await getCxmsDir();
+    for (const name of PID_FILES) {
+        try {
+            const pid = parseInt(await fs.readFile(path.join(dir, name), 'utf8'), 10);
+            process.kill(pid, 0); // throws if not running
+            return pid;
+        } catch { /* try the next one */ }
     }
+    return null;
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -219,7 +200,7 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
     await fs.writeFile(markerPath, rootContext);
 
     // Create directories
-    const dirs = ['context-types', 'collections', 'logs', '.phaibel'];
+    const dirs = ['context-types', 'collections', 'logs', '.phaibel']; // .phaibel/ is the legacy config dir name, kept for compatibility
     for (const dir of dirs) {
         await fs.mkdir(path.join(cwd, dir), { recursive: true });
     }
@@ -237,7 +218,7 @@ Content is stored as Markdown files with YAML frontmatter, organised by context 
     console.log(`Start the server with: cxms`);
 }
 
-async function cmdPhaibelInit(): Promise<void> {
+async function cmdSetup(): Promise<void> {
     setPlatform(createNodePlatform());
 
     const readline = await import('readline');
@@ -246,11 +227,11 @@ async function cmdPhaibelInit(): Promise<void> {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     const ask = (q: string) => new Promise<string>(r => rl.question(q, a => r(a.trim())));
 
-    console.log('\n  \x1b[1m\x1b[36mPhaibel\x1b[0m — Personal AI agent\n');
+    console.log('\n  \x1b[1m\x1b[36mCxMS\x1b[0m — Context Management System\n');
     console.log('  This will set up your vault and personal profile.\n');
 
     // Pick vault location
-    const defaultVault = path.join(os.homedir(), 'Phaibel');
+    const defaultVault = path.join(os.homedir(), 'CxMS');
     const vaultInput = await ask(`  Vault location (default: ${defaultVault}): `);
     const vaultDir = path.resolve(vaultInput || defaultVault);
     rl.close();
@@ -263,7 +244,7 @@ async function cmdPhaibelInit(): Promise<void> {
     if (existing.complete) {
         console.log(`\n  Already set up for \x1b[1m${existing.userName}\x1b[0m (${existing.role}) at ${vaultDir}`);
         console.log(`  Agent: ${existing.agentName}`);
-        console.log(`\n  Start with: phaibel start\n`);
+        console.log(`\n  Start with: cxms start\n`);
         return;
     }
 
@@ -281,8 +262,8 @@ async function cmdPhaibelInit(): Promise<void> {
     await saveSystemConfig({
         foundationRoot: vaultDir,
         port: DEFAULT_PORT,
-        name: answers.agentName || 'Phaibel',
-        description: `${answers.name}'s personal Phaibel agent`,
+        name: answers.agentName || 'Assistant',
+        description: `${answers.name}'s personal CxMS instance`,
     });
 
     const token = await loadBearerToken();
@@ -290,8 +271,8 @@ async function cmdPhaibelInit(): Promise<void> {
     console.log(`\n  \x1b[32m✓\x1b[0m Vault ready at ${vaultDir}`);
     console.log(`  \x1b[32m✓\x1b[0m Context types: ${result.typesCreated.length > 0 ? result.typesCreated.join(', ') : 'installed'}`);
     console.log(`  \x1b[32m✓\x1b[0m Profiles written\n`);
-    console.log(`  Start your agent:\n`);
-    console.log(`    \x1b[1mphaibel start\x1b[0m\n`);
+    console.log(`  Start the server:\n`);
+    console.log(`    \x1b[1mcxms start\x1b[0m\n`);
     console.log(`  Bearer token (for API / MCP clients):\n`);
     console.log(`    \x1b[2m${token.slice(0, 18)}...\x1b[0m\n`);
 }
@@ -336,7 +317,7 @@ async function cmdToken(regenerate: boolean): Promise<void> {
     }
 }
 
-// ── Keys & models commands (phaibel only) ───────────────────────────────────
+// ── Keys & models commands ──────────────────────────────────────────────────
 
 async function cmdKeys(args: string[]): Promise<void> {
     const [sub, vendor, keyArg] = args;
@@ -346,7 +327,7 @@ async function cmdKeys(args: string[]): Promise<void> {
         const configured = VENDORS.filter(v => keys[v]);
         if (configured.length === 0) {
             console.log('No API keys configured.');
-            console.log(`  Add one: phaibel keys add <vendor> [key]`);
+            console.log(`  Add one: cxms keys add <vendor> [key]`);
             console.log(`  Vendors: ${VENDORS.join(', ')}`);
             return;
         }
@@ -380,8 +361,8 @@ async function cmdKeys(args: string[]): Promise<void> {
         return;
     }
 
-    console.error(`Unknown subcommand: phaibel keys ${sub}`);
-    console.error('Usage: phaibel keys [list | add <vendor> [key] | remove <vendor>]');
+    console.error(`Unknown subcommand: cxms keys ${sub}`);
+    console.error('Usage: cxms keys [list | add <vendor> [key] | remove <vendor>]');
     process.exit(1);
 }
 
@@ -393,7 +374,7 @@ async function cmdModels(args: string[]): Promise<void> {
         const isEmpty = !m.chat && !m.fast && !m.embed;
         if (isEmpty) {
             console.log('No model configuration set.');
-            console.log('  Switch to a suite: phaibel models use <vendor>');
+            console.log('  Switch to a suite: cxms models use <vendor>');
             console.log(`  Vendors: ${Object.keys(SUITES).join(', ')}`);
             return;
         }
@@ -403,8 +384,8 @@ async function cmdModels(args: string[]): Promise<void> {
         console.log(`  fast:   ${m.fast  || '(not set)'}`);
         console.log(`  embed:  ${m.embed || '(not set)'}`);
         console.log('');
-        console.log('  Change suite:  phaibel models use <vendor>');
-        console.log('  Change model:  phaibel models set <role> <model>');
+        console.log('  Change suite:  cxms models use <vendor>');
+        console.log('  Change model:  cxms models set <role> <model>');
         return;
     }
 
@@ -430,7 +411,7 @@ async function cmdModels(args: string[]): Promise<void> {
             process.exit(1);
         }
         if (!model) {
-            console.error('Usage: phaibel models set <role> <model>');
+            console.error('Usage: cxms models set <role> <model>');
             process.exit(1);
         }
         await setModel(role as ModelRole, model);
@@ -438,12 +419,12 @@ async function cmdModels(args: string[]): Promise<void> {
         return;
     }
 
-    console.error(`Unknown subcommand: phaibel models ${sub}`);
-    console.error('Usage: phaibel models [list | use <vendor> | set <role> <model>]');
+    console.error(`Unknown subcommand: cxms models ${sub}`);
+    console.error('Usage: cxms models [list | use <vendor> | set <role> <model>]');
     process.exit(1);
 }
 
-// ── Daemon commands (phaibel only) ──────────────────────────────────────────
+// ── Daemon commands ─────────────────────────────────────────────────────────
 
 async function cmdStart(opts: {
     port?: number;
@@ -453,14 +434,14 @@ async function cmdStart(opts: {
     const existing = await getRunningPid();
     const port = opts.port || DEFAULT_PORT;
     if (existing) {
-        console.log(`Phaibel is already running (pid ${existing})`);
+        console.log(`CxMS is already running (pid ${existing})`);
         console.log(`  Client: http://localhost:${port}/`);
         return;
     }
 
     const dir = await getCxmsDir();
-    const pidFile = path.join(dir, 'phaibel.pid');
-    const logFile = path.join(dir, 'phaibel.log');
+    const pidFile = path.join(dir, 'cxms.pid');
+    const logFile = path.join(dir, 'cxms.log');
 
     const args = ['--server'];
     if (opts.port) args.push('--port', String(opts.port));
@@ -477,25 +458,25 @@ async function cmdStart(opts: {
 
     await fs.writeFile(pidFile, String(child.pid));
 
-    console.log(`Phaibel started (pid ${child.pid})`);
+    console.log(`CxMS started (pid ${child.pid})`);
     console.log(`  Client:  http://localhost:${port}/`);
     console.log(`  Log:     ${logFile}`);
-    console.log(`\n  Stop with: phaibel stop`);
+    console.log(`\n  Stop with: cxms stop`);
 }
 
 async function cmdStop(): Promise<void> {
     const pid = await getRunningPid();
     if (!pid) {
-        console.log('Phaibel is not running.');
+        console.log('CxMS is not running.');
         return;
     }
 
     process.kill(pid, 'SIGTERM');
 
     const dir = await getCxmsDir();
-    await fs.unlink(path.join(dir, 'phaibel.pid')).catch(() => {});
+    for (const name of PID_FILES) await fs.unlink(path.join(dir, name)).catch(() => {});
 
-    console.log(`Phaibel stopped (pid ${pid})`);
+    console.log(`CxMS stopped (pid ${pid})`);
 }
 
 async function cmdRestart(opts: { port?: number; foundation?: string; noAuth: boolean }): Promise<void> {
@@ -508,11 +489,11 @@ async function cmdStatus(port?: number): Promise<void> {
     const pid = await getRunningPid();
     const p = port || DEFAULT_PORT;
     if (pid) {
-        console.log(`Phaibel is running (pid ${pid})`);
+        console.log(`CxMS is running (pid ${pid})`);
         console.log(`  Client: http://localhost:${p}/`);
     } else {
-        console.log('Phaibel is not running.');
-        console.log('  Start with: phaibel start');
+        console.log('CxMS is not running.');
+        console.log('  Start with: cxms start');
     }
 }
 
@@ -627,33 +608,27 @@ async function startServer(opts: {
 
 const opts = parseArgs(process.argv);
 
-// When invoked as `phaibel init`, map to the rich setup flow
-if (IS_PHAIBEL && opts.command === 'init') opts.command = 'phaibel-init';
-
-if (opts.command === 'phaibel-init') {
-    cmdPhaibelInit().catch(err => { console.error(err); process.exit(1); });
+if (opts.command === 'setup') {
+    cmdSetup().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'init') {
     cmdInit().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'onboard') {
     cmdOnboard().catch(err => { console.error(err); process.exit(1); });
 } else if (opts.command === 'token') {
     cmdToken(opts.regenerate).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'start') {
+} else if (opts.command === 'start') {
     cmdStart(opts).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'stop') {
+} else if (opts.command === 'stop') {
     cmdStop().catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'restart') {
+} else if (opts.command === 'restart') {
     cmdRestart(opts).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'status') {
+} else if (opts.command === 'status') {
     cmdStatus(opts.port).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'keys') {
+} else if (opts.command === 'keys') {
     cmdKeys(process.argv.slice(3)).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && opts.command === 'models') {
+} else if (opts.command === 'models') {
     cmdModels(process.argv.slice(3)).catch(err => { console.error(err); process.exit(1); });
-} else if (IS_PHAIBEL && !opts.command && !opts.server) {
-    // `phaibel` alone — show help instead of starting server
-    printHelp();
 } else {
-    // cxms (foreground) or phaibel --server (daemon child)
+    // cxms (foreground) or cxms --server (daemon child)
     startServer(opts).catch(err => { console.error(err); process.exit(1); });
 }

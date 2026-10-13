@@ -27,7 +27,7 @@ export function problemResponse(
 ): void {
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const body: ProblemDetail = {
-        type: `https://phaibel.dev/errors/${slug}`,
+        type: `urn:cxms:error:${slug}`,
         title,
         status,
     };

@@ -49,9 +49,9 @@ export async function loadContextTypesFromStore(): Promise<EntityTypeConfig[] | 
                 if (!st.isDirectory) continue;
             } catch { continue; }
 
-            const phaibelMd = paths.join(ctDir, entry, '.cxms.md');
+            const cxmsMd = paths.join(ctDir, entry, '.cxms.md');
             try {
-                const raw = await storage.readFile(phaibelMd);
+                const raw = await storage.readFile(cxmsMd);
                 const { data } = matter(raw);
                 const config = data as EntityTypeConfig;
                 config.directory = `context-types/${entry}`;
@@ -125,8 +125,8 @@ ${completionNote}
     if (config.spawner) meta.spawner = config.spawner;
     if (config.calendarDateField) meta.calendarDateField = config.calendarDateField;
 
-    const phaibelMd = matter.stringify(body, meta);
-    await storage.writeFile(paths.join(typeDir, '.cxms.md'), phaibelMd);
+    const cxmsMd = matter.stringify(body, meta);
+    await storage.writeFile(paths.join(typeDir, '.cxms.md'), cxmsMd);
 
     const examplesPath = paths.join(typeDir, '.cxms-examples.md');
     try {

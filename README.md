@@ -140,10 +140,17 @@ await writeEntity(`${dir}/${nodeFilename('Agent memory snapshot', id)}`, {
 ## CLI Reference
 
 ```
-cxms                              Start the server
+cxms                              Start the server in the foreground
 cxms init                         Initialize a Foundation in the current directory
+cxms setup                        Guided setup — choose vault location + interview
+cxms onboard                      Run the first-time setup interview
 cxms token                        Print the bearer token
 cxms token --regenerate           Regenerate the bearer token
+
+cxms start | stop | restart       Manage the background server
+cxms status                       Show whether the background server is running
+cxms keys [add|remove] <vendor>   Manage LLM API keys (anthropic, openai, gemini, deepseek)
+cxms models [use|set] ...         Configure the chat / fast / embed models
 
 --port,        -p <port>          Port (default: 3800)
 --foundation,  -f <path>          Foundation root directory

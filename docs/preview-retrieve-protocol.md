@@ -233,7 +233,7 @@ const fullNodes = [...fullA.nodes, ...fullB.nodes, ...fullC.nodes];
 
 ## MCP Workflow
 
-For MCP-connected agents (Claude Desktop, Cursor, Phaibel):
+For MCP-connected agents (Claude Desktop, Cursor):
 
 ```
 1. search(query, snippetLength=200, limit=15)

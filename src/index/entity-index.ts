@@ -146,7 +146,7 @@ export class EntityIndex {
         }
 
         this._builtAt = new Date();
-        if (typeof process !== 'undefined' && process.env?.PHAIBEL_DEBUG === '1') {
+        if (typeof process !== 'undefined' && (process.env?.CXMS_DEBUG === '1' || process.env?.PHAIBEL_DEBUG === '1')) {
             console.debug(`[index] Built index: ${this.nodes.size} nodes, ${this.edges.length} edges`);
         }
     }

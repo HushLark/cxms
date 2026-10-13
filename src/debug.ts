@@ -2,7 +2,7 @@
 // Debug Logger
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VERBOSE = typeof process !== 'undefined' && process.env?.PHAIBEL_DEBUG === '1';
+const VERBOSE = typeof process !== 'undefined' && (process.env?.CXMS_DEBUG === '1' || process.env?.PHAIBEL_DEBUG === '1');
 
 export function debug(tag: string, err: unknown): void {
     if (VERBOSE) {

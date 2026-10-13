@@ -81,7 +81,7 @@ const SARAH = {
     primaryGoals: ['Managing the family calendar', 'Tracking kids\' activities and schedules', 'Shopping lists and household tasks'],
     communicationStyle: 'conversational',
     agentPersonality: 'butler',
-    agentName: 'Phaibel',
+    agentName: 'Assistant',
     timezone: 'America/Chicago',
     language: 'en',
 };
@@ -110,7 +110,7 @@ const ALEX = {
     primaryGoals: ['Project and initiative tracking', 'Team and 1:1 management', 'Strategic decision tracking'],
     communicationStyle: 'brief',
     agentPersonality: 'rockstar',
-    agentName: 'Phaibel',
+    agentName: 'Assistant',
     timezone: 'America/Los_Angeles',
     language: 'en',
 };
@@ -193,8 +193,8 @@ try {
             assert.ok(raw.includes('communicationStyle: "conversational"'), 'comm style');
         }),
 
-        test('phaibel-profile.md has butler personality and honorific', async () => {
-            const raw = await fs.readFile(path.join(sarahDir, 'profiles', 'phaibel-profile.md'), 'utf8');
+        test('agent-profile.md has butler personality and honorific', async () => {
+            const raw = await fs.readFile(path.join(sarahDir, 'profiles', 'agent-profile.md'), 'utf8');
             assert.ok(raw.includes('personality: "butler"'), 'personality');
             assert.ok(raw.includes('honorific: "ma\'am"'), 'honorific for female');
         }),
@@ -256,8 +256,8 @@ try {
             }
         }),
 
-        test('phaibel-profile.md has executive personality and sir honorific', async () => {
-            const raw = await fs.readFile(path.join(marcusDir, 'profiles', 'phaibel-profile.md'), 'utf8');
+        test('agent-profile.md has executive personality and sir honorific', async () => {
+            const raw = await fs.readFile(path.join(marcusDir, 'profiles', 'agent-profile.md'), 'utf8');
             assert.ok(raw.includes('personality: "executive"'), 'personality');
             assert.ok(raw.includes('honorific: "sir"'), 'honorific for male');
         }),
@@ -326,8 +326,8 @@ try {
             }
         }),
 
-        test('phaibel-profile.md has rockstar personality and no honorific for gender=other', async () => {
-            const raw = await fs.readFile(path.join(alexDir, 'profiles', 'phaibel-profile.md'), 'utf8');
+        test('agent-profile.md has rockstar personality and no honorific for gender=other', async () => {
+            const raw = await fs.readFile(path.join(alexDir, 'profiles', 'agent-profile.md'), 'utf8');
             assert.ok(raw.includes('personality: "rockstar"'), 'rockstar');
             assert.ok(!raw.includes('honorific:'), 'no honorific for other gender');
         }),

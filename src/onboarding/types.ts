@@ -52,7 +52,7 @@ export interface OnboardingAnswers {
     communicationStyle: CommunicationStyle;
 
     // Agent setup
-    agentName?: string;         // what to call the AI (default: "Phaibel")
+    agentName?: string;         // what to call the AI (default: "Assistant")
     agentPersonality: AgentPersonality;
 
     // Metadata
@@ -76,7 +76,7 @@ export interface UserProfileDoc {
     lastUsed: string;
 }
 
-/** Written to profiles/phaibel-profile.md */
+/** Written to profiles/agent-profile.md (legacy: phaibel-profile.md) */
 export interface AgentProfileDoc {
     name: string;
     personality: AgentPersonality;

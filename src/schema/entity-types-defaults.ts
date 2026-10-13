@@ -6,7 +6,7 @@ import type { EntityTypeConfig } from './entity-type-config.js';
 
 /**
  * CxMS ships with no default entity types.
- * The host application (e.g. Phaibel) is responsible for creating
+ * The host application is responsible for creating
  * context types via addEntityType() or the REST/MCP API.
  */
 export const DEFAULT_ENTITY_TYPES: EntityTypeConfig[] = [];

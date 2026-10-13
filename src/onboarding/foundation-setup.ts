@@ -11,6 +11,10 @@ import { writeContextType } from '../schema/context-type-store.js';
 import { getStarterTypes } from './starter-types.js';
 import type { OnboardingAnswers, UserProfileDoc, AgentProfileDoc, OnboardingResult, OnboardingStatus } from './types.js';
 
+const AGENT_PROFILE_FILE = 'agent-profile.md';
+/** Written by older versions; still read so existing Foundations stay onboarded. */
+const LEGACY_AGENT_PROFILE_FILE = 'phaibel-profile.md';
+
 // ── Foundation creation ───────────────────────────────────────────────────────
 
 export async function createFoundationIfNeeded(dir: string): Promise<void> {
@@ -67,7 +71,7 @@ function buildUserProfileMd(p: UserProfileDoc): string {
         .map(([k, v]) => Array.isArray(v) ? `${k}:\n${v.map(x => `  - ${x}`).join('\n')}` : `${k}: ${JSON.stringify(v)}`)
         .join('\n');
 
-    return `---\n${yaml}\n---\n\n# ${p.name}\n\nUser profile for the Phaibel personal assistant.\n`;
+    return `---\n${yaml}\n---\n\n# ${p.name}\n\nUser profile for the personal assistant.\n`;
 }
 
 function buildAgentProfileMd(p: AgentProfileDoc): string {
@@ -78,7 +82,7 @@ function buildAgentProfileMd(p: AgentProfileDoc): string {
         p.honorific ? `honorific: ${JSON.stringify(p.honorific)}` : null,
     ].filter(Boolean).join('\n');
 
-    return `---\n${yaml}\n---\n\n# ${p.name}\n\nPhaibel agent profile.\n`;
+    return `---\n${yaml}\n---\n\n# ${p.name}\n\nAgent profile.\n`;
 }
 
 function buildRootContextMd(answers: OnboardingAnswers): string {
@@ -124,7 +128,7 @@ ${goalsText}
 
 ## Agent
 
-The assistant is named **${answers.agentName || 'Phaibel'}** with a **${answers.agentPersonality}** personality.
+The assistant is named **${answers.agentName || 'Assistant'}** with a **${answers.agentPersonality}** personality.
 Communication style preference: **${answers.communicationStyle}**.
 
 ## Conventions
@@ -195,13 +199,13 @@ export async function runOnboarding(
 
     // 5. Write agent profile
     const agentProfile: AgentProfileDoc = {
-        name: answers.agentName || 'Phaibel',
+        name: answers.agentName || 'Assistant',
         personality: answers.agentPersonality,
         version: '1.0',
         honorific: answers.gender === 'male' ? 'sir' : answers.gender === 'female' ? 'ma\'am' : undefined,
     };
     await storage.writeFile(
-        paths.join(profilesDir, 'phaibel-profile.md'),
+        paths.join(profilesDir, AGENT_PROFILE_FILE),
         buildAgentProfileMd(agentProfile),
     );
 
@@ -212,7 +216,7 @@ export async function runOnboarding(
         role: answers.role,
         foundationPath: foundationDir,
         typesCreated,
-        profilesWritten: ['user-profile.md', 'phaibel-profile.md'],
+        profilesWritten: ['user-profile.md', AGENT_PROFILE_FILE],
     };
 }
 
@@ -245,12 +249,15 @@ export async function getOnboardingStatus(): Promise<OnboardingStatus> {
         hasAgentProfile = !!completeMatch;
     } catch { /* no profile */ }
 
-    try {
-        const raw = await storage.readFile(paths.join(profilesDir, 'phaibel-profile.md'));
-        const match = raw.match(/^name:\s*"?([^"\n]+)"?/m);
-        if (match) agentName = match[1];
-        hasAgentProfile = true;
-    } catch { /* no agent profile */ }
+    for (const file of [AGENT_PROFILE_FILE, LEGACY_AGENT_PROFILE_FILE]) {
+        try {
+            const raw = await storage.readFile(paths.join(profilesDir, file));
+            const match = raw.match(/^name:\s*"?([^"\n]+)"?/m);
+            if (match) agentName = match[1];
+            hasAgentProfile = true;
+            break;
+        } catch { /* no agent profile under this name */ }
+    }
 
     return {
         complete: hasUserProfile && hasAgentProfile,

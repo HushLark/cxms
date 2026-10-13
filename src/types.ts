@@ -180,7 +180,7 @@ export interface Collection {
  *   (Root)/collections/                            — Key/value collections
  *   (Root)/logs/                                   — Access logs
  *
- * Host applications (e.g. Phaibel) may add their own directories:
+ * Host applications may add their own directories:
  *   (Root)/profiles/                               — Application-specific
  *   (Root)/feral/                                  — Application-specific
  */

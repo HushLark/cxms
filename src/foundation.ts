@@ -4,7 +4,7 @@
 // CxMS requires an explicit foundation root. Callers must call
 // setFoundationRoot() before using any CxMS functions.
 //
-// This replaces Phaibel's findFoundationRoot() which walks up the directory
+// Replaces the older findFoundationRoot() which walks up the directory
 // tree — CxMS does not walk directories; it receives the root explicitly.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,6 @@ export function resetFoundationRoot(): void {
 }
 
 /**
- * Alias for getFoundationRoot() — backward compatibility with Phaibel's getVaultRoot().
+ * Alias for getFoundationRoot() — backward compatibility with the older getVaultRoot().
  */
 export const getVaultRoot = getFoundationRoot;

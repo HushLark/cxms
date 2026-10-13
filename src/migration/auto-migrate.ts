@@ -28,7 +28,7 @@ const MIGRATION_MARKER = '.v5-migrated';
 
 /**
  * Callback to save migrated profile data.
- * Phaibel injects this to handle its own profile format.
+ * Host applications inject this to handle their own profile format.
  * The state object is the raw .state.json content.
  */
 export type ProfileMigrationCallback = (root: string, state: Record<string, unknown>) => Promise<void>;
