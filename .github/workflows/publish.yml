@@ -1,44 +1,60 @@
 name: Publish to npm
 
+# Every push to main checks whether package.json's version is on npm yet,
+# and publishes it if not. Bump the version (./ship.sh does a patch bump)
+# to release; pushes that keep the same version are a no-op.
 on:
   push:
     branches: [main]
-    paths:
-      - 'package.json'
+  workflow_dispatch:
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # npm trusted publishing (OIDC) + provenance
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Only publish when the version in package.json actually changed
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - run: npm ci
+      # Trusted publishing needs npm >= 11.5.1
+      - run: npm install -g npm@latest
 
-      - name: Check if version changed
+      - name: Check if this version is already on npm
         id: version
         run: |
+          NAME=$(node -p "require('./package.json').name")
           LOCAL=$(node -p "require('./package.json').version")
-          REMOTE=$(npm view @gclift/cxms version 2>/dev/null || echo "0.0.0")
-          if [ "$LOCAL" = "$REMOTE" ]; then
+          if [ -n "$(npm view "$NAME@$LOCAL" version 2>/dev/null)" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Version $LOCAL already published — skipping"
+            echo "$NAME@$LOCAL already published — skipping"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Publishing $LOCAL (was $REMOTE)"
+            echo "Publishing $NAME@$LOCAL (latest on npm: $(npm view "$NAME" version 2>/dev/null || echo none))"
           fi
+
+      - name: Install
+        if: steps.version.outputs.skip == 'false'
+        run: npm ci
 
       - name: Build
         if: steps.version.outputs.skip == 'false'
         run: npm run build
 
+      # Uses trusted publishing when it's configured on npmjs.com;
+      # otherwise falls back to the NPM_TOKEN secret.
       - name: Publish
         if: steps.version.outputs.skip == 'false'
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

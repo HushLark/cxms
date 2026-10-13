@@ -30,7 +30,7 @@ echo "Version: $NEW_VERSION"
 
 echo "── Stage & Commit ──"
 git add -A
-MSG="${1:-chore: bump version to $NEW_VERSION [skip ci]}"
+MSG="${1:-chore: release $NEW_VERSION}"
 git commit -m "$MSG" || echo "Nothing to commit."
 
 echo "── Pull & Push ──"
