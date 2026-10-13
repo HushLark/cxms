@@ -2,6 +2,40 @@
 
 CxMS gives AI agents structured, persistent memory. Agents store and retrieve knowledge through typed **context nodes** — tasks, events, notes, people, goals, and any custom type you define. Content lives as human-readable Markdown files with YAML frontmatter in a **Foundation** directory on disk. CxMS provides BM25 full-text search with Porter stemming, a relationship graph between nodes, token-budgeted context trees for LLM consumption, vault analytics, and both a REST API and an MCP tool server so any agent framework can plug in.
 
+## Quick Start
+
+Requires Node.js 18+.
+
+```bash
+# 1. Install the CLI
+npm install -g @gclift/cxms
+
+# 2. Create a Foundation (pick a folder, answer a short interview)
+cxms setup
+
+# 3. Run the server in the background on http://localhost:3800
+cxms start
+```
+
+Then point your MCP client (Claude Desktop, Cursor, …) at it:
+
+```json
+{
+  "mcpServers": {
+    "cxms": { "url": "http://localhost:3800/mcp" }
+  }
+}
+```
+
+Or call the REST API with the bearer token from `cxms token`:
+
+```bash
+curl http://localhost:3800/cx/health
+curl -H "Authorization: Bearer $(cxms token)" http://localhost:3800/cx/context-types
+```
+
+See [Getting Started](#getting-started) for the full walkthrough, including embedding CxMS as a library.
+
 ## Documentation
 
 | Page | Description |
@@ -29,7 +63,7 @@ CxMS gives AI agents structured, persistent memory. Agents store and retrieve kn
 
 ---
 
-## Quick Start
+## Getting Started
 
 ### Method 1 — Standalone server
 
