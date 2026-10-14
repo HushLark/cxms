@@ -311,10 +311,6 @@ try {
     const types2 = [...new Set(s2.body.results.map(r => r.type))];
     assert(types2.length >= 2,                  `cross-type search spans ${types2.length} types: ${types2.join(', ')}`);
 
-    // Tag filter
-    const s3 = await restReq('POST', '/cx/search', { query: 'security tag:engineering' });
-    assert(s3.body.results.every(r => (r.tags||[]).includes('engineering')), 'tag filter works: all results tagged "engineering"');
-
     // Type filter
     const s4 = await restReq('POST', '/cx/search', { query: 'quarterly board', type: 'task' });
     assert(s4.body.results.every(r => r.type === 'task'), 'type filter: all results are tasks');

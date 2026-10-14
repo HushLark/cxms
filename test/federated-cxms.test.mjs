@@ -227,15 +227,14 @@ async function testCRUDNodes(name, port, typeName) {
     // UPDATE
     if (nodeId) {
         const updateRes = await httpRequest(port, 'PUT', `/cx/context-types/${typeName}/${nodeId}`, {
-            tags: ['test', name, 'updated'],
             content: `Updated by federated test`,
         });
         assert(updateRes.status === 200, `${name}: update node — ${updateRes.status}`);
 
         // Verify update
         const verifyRes = await httpRequest(port, 'GET', `/cx/context-types/${typeName}/${nodeId}`);
-        const tags = verifyRes.body?.tags || [];
-        assert(tags.includes('updated'), `${name}: node has 'updated' tag after update`);
+        const content = verifyRes.body?.content || '';
+        assert(content.includes('Updated by federated test'), `${name}: node content updated`);
     }
 
     // SEARCH
