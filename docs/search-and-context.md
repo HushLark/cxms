@@ -48,37 +48,18 @@ Stopwords (`the`, `a`, `is`, `in`, etc.) are filtered before stemming to avoid n
 
 ### Field Weights
 
-CxMS indexes five fields per node, each with a different weight multiplier:
+CxMS indexes four fields per node, each with a different weight multiplier:
 
 | Field | Weight | Rationale |
 |-------|--------|-----------|
 | `title` | 5× | The author's intentional label; highest signal |
-| `tags` | 3× | User-curated; represent deliberate categorization |
 | `summary` | 2× | Human-authored one-liner; dense signal |
 | Custom fields | 1.5× | Status, priority, category — structured but not prose |
 | `body` | 1× | Full content; high noise relative to title |
 
-A query match in the title outweighs five matches in the body. This reflects the reality that titles and tags are deliberately chosen to represent the document's essence, while body text contains incidental mentions.
+A query match in the title outweighs five matches in the body. This reflects the reality that titles are deliberately chosen to represent the document's essence, while body text contains incidental mentions.
 
 **Custom field indexing**: All custom fields from the type schema are concatenated into a single weighted field. So if a task has `status: "blocked"` and `assignee: "alice"`, searching `"blocked alice"` will score that node highly even if neither word appears in the title or body.
-
-### Tag Prefix Queries
-
-You can filter search results by tag using the `tag:` prefix syntax. Tokens beginning with `tag:` are extracted from the query before BM25 scoring and applied as an exact post-filter:
-
-```
-quarterly review tag:urgent
-```
-
-This runs BM25 for `"quarterly review"` across all nodes, then removes any results not tagged `urgent`. You can combine multiple tag filters:
-
-```
-roadmap planning tag:work tag:q2
-```
-
-Tag filters are ANDed: the node must have all specified tags.
-
-Tag filters use exact matching (no stemming): `tag:meetings` does not match nodes tagged `meeting`. Use the exact tag string as stored.
 
 ### Making a Search Request
 
@@ -89,7 +70,7 @@ POST /cx/search
 Content-Type: application/json
 
 {
-  "query": "quarterly review tag:work",
+  "query": "quarterly review",
   "type": "task",
   "limit": 10,
   "offset": 0
@@ -111,7 +92,6 @@ Response:
       "title": "Review Q3 quarterly report",
       "type": "task",
       "score": 12.47,
-      "tags": ["work", "urgent"],
       "summary": "Review the Q3 financial report before Friday standup."
     }
   ]
@@ -126,7 +106,7 @@ Scores are BM25 scores — higher is more relevant. There is no maximum; scores 
 {
   "tool": "search",
   "arguments": {
-    "query": "quarterly review tag:work",
+    "query": "quarterly review",
     "type": "task",
     "limit": 10
   }
@@ -148,7 +128,7 @@ Every write operation (create, update, delete, restore) updates the index increm
 
 ```typescript
 // After writing a node:
-await index.addOrUpdate(type, id, title, filepath, tags, summary);
+await index.addOrUpdate(type, id, title, filepath, summary);
 
 // After deleting a node:
 index.remove(type, id);
@@ -267,7 +247,7 @@ GET /cx/context?scope=trunk
 
 Trunk plus, for each context type:
 - The type's `.cxms.md` schema and guidelines file
-- A summary list of recent nodes (title, id, tags, summary, key fields)
+- A summary list of recent nodes (title, id, summary, key fields)
 
 Full node body content is **not** included. This gives the agent enough to know what exists without reading every word.
 
@@ -409,8 +389,7 @@ Response:
       "type": "task",
       "due": "2026-04-15",
       "daysOverdue": 3,
-      "priority": "high",
-      "tags": ["finance", "admin"]
+      "priority": "high"
     }
   ],
   "today": [

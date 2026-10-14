@@ -12,7 +12,7 @@ A CxMS system is built around three concepts:
 
 **Context Type** — A schema definition for a category of information. A context type has a name (`task`), a plural (`tasks`), a set of typed fields (`status`, `priority`), and optional completion and calendar semantics. CxMS ships with no default types — you define exactly what your agent needs.
 
-**Context Node** — A single record within a context type. Stored as a Markdown file with YAML frontmatter. The frontmatter holds the structured data (id, title, tags, custom fields); the Markdown body holds free-form content. Nodes are files you can open in any editor, commit to git, or manipulate with standard tools.
+**Context Node** — A single record within a context type. Stored as a Markdown file with YAML frontmatter. The frontmatter holds the structured data (id, title, custom fields); the Markdown body holds free-form content. Nodes are files you can open in any editor, commit to git, or manipulate with standard tools.
 
 ---
 
@@ -109,7 +109,7 @@ Type definitions are cached in memory (`_cache`) and invalidated on write. Calli
 
 The storage layer reads and writes context nodes as Markdown files. Each node's filename is `{slug}_{id}.md` where the slug is a URL-safe version of the title and the id is an 8-character alphanumeric string generated at creation time.
 
-**Reading a node** — `parseEntity(filepath, raw)` splits the file into YAML frontmatter (`meta`) and Markdown body (`content`) using `gray-matter`. The `meta` object contains all frontmatter fields including id, title, tags, created, and any custom type-specific fields.
+**Reading a node** — `parseEntity(filepath, raw)` splits the file into YAML frontmatter (`meta`) and Markdown body (`content`) using `gray-matter`. The `meta` object contains all frontmatter fields including id, title, created, and any custom type-specific fields.
 
 **Writing a node** — `writeEntity(filepath, meta, content)` serializes the meta object back to YAML frontmatter and writes the file atomically.
 
@@ -125,12 +125,11 @@ The storage layer reads and writes context nodes as Markdown files. Each node's 
 
 The index layer provides in-memory full-text search and a relationship graph. It is built on startup and updated incrementally on writes.
 
-**BM25 full-text search** — `BM25Index` in `src/index/bm25.ts` implements the BM25 ranking function with Porter stemming (`src/index/stemmer.ts`). Each node is indexed across five weighted fields:
+**BM25 full-text search** — `BM25Index` in `src/index/bm25.ts` implements the BM25 ranking function with Porter stemming (`src/index/stemmer.ts`). Each node is indexed across four weighted fields:
 
 | Field | Weight | Rationale |
 |-------|--------|-----------|
 | `title` | 5× | The most discriminating signal |
-| `tags` | 3× | User-curated labels |
 | `summary` | 2× | Human-authored one-liner |
 | Custom fields | 1.5× | Status, priority, category, etc. |
 | `body` | 1× | Full markdown content |
@@ -138,8 +137,6 @@ The index layer provides in-memory full-text search and a relationship graph. It
 BM25 accounts for document length: a match in a short document scores higher than the same match buried in a long one. IDF weighting ensures rare terms score higher than common ones.
 
 **Porter stemming** — Queries and documents are both stemmed before indexing. This means a search for `"meetings"` matches nodes containing `"meeting"`, `"met"`, or `"meet"`.
-
-**Tag prefix queries** — Tokens beginning with `tag:` are treated as exact tag filters applied after BM25 scoring. `"tag:urgent quarterly review"` returns nodes matching the full-text query AND tagged `urgent`.
 
 **Relationship graph** — The index also builds a directed edge graph. Edges are extracted from:
 - `@firstname` mentions in the Markdown body → `mention` edges to `person` nodes
@@ -153,7 +150,7 @@ const index = getEntityIndex(); // global singleton
 await index.build();            // read all nodes from disk; called at startup
 
 // After writing a node:
-await index.addOrUpdate(type, id, title, filepath, tags, summary);
+await index.addOrUpdate(type, id, title, filepath, summary);
 
 // After deleting a node:
 index.remove(type, id);
@@ -192,7 +189,7 @@ The server layer exposes everything above via HTTP.
 
 **REST router** (`cx-router.ts`) — handles `/cx/*` routes. All routes except `/cx/health` require a bearer token. Errors are returned as [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) with `Content-Type: application/problem+json`.
 
-**MCP server** (`mcp-server.ts`) — uses the v2 MCP TypeScript SDK (`@modelcontextprotocol/server` + `@modelcontextprotocol/node`) to expose 26 tools at `/mcp` over Streamable HTTP. It speaks MCP protocol revision `2026-07-28` (stateless: no sessions or `initialize`; clients call `server/discover` and send their protocol version in each request's `_meta`) and still serves 2025-era clients that open with `initialize`, negotiating `2025-11-25`. `createMcpHandler` builds a fresh server per request, so every HTTP POST to `/mcp` is independent.
+**MCP server** (`mcp-server.ts`) — uses the v2 MCP TypeScript SDK (`@modelcontextprotocol/server` + `@modelcontextprotocol/node`) to expose 25 tools at `/mcp` over Streamable HTTP. It speaks MCP protocol revision `2026-07-28` (stateless: no sessions or `initialize`; clients call `server/discover` and send their protocol version in each request's `_meta`) and still serves 2025-era clients that open with `initialize`, negotiating `2025-11-25`. `createMcpHandler` builds a fresh server per request, so every HTTP POST to `/mcp` is independent.
 
 **Auth** (`auth.ts`) — bearer token stored in `~/.cxms/token`. Load with `loadBearerToken()`, regenerate with `regenerateToken()`. Disable entirely with `setAuthEnabled(false)`.
 
@@ -224,11 +221,10 @@ Here is the complete data path when an agent calls `POST /cx/context-types/task`
 When an agent calls `POST /cx/search` with `{ "query": "quarterly review" }`:
 
 1. **Router** dispatches to `handleSearch`
-2. **`searchEntities(query, type?, options?)`** is called in the storage layer
+2. **`searchEntities(query, type?)`** is called in the storage layer
 3. **Index layer** tokenizes and stems the query: `["quarter", "review"]`
 4. **BM25** ranks all indexed nodes by relevance score
-5. **Optional tag filter** removes nodes that don't match required tags
-6. **Results** are sorted by score and returned as `{ id, title, type, score, tags, summary }`
+5. **Results** are sorted by score and returned as `{ id, title, type, score, summary }`
 
 Search is always in-memory after the initial `index.build()`. There are no database queries.
 
@@ -245,7 +241,6 @@ title: Review Q3 report
 entityType: task
 created: 2026-04-17T10:00:00.000Z
 updated: 2026-04-18T09:30:00.000Z
-tags: [work, urgent]
 summary: Review the Q3 financial report before Friday standup.
 status: open
 priority: high
@@ -268,7 +263,6 @@ Flag anything that differs from the board deck by more than 5%.
 - `title` — human-readable name
 - `entityType` — the context type name
 - `created` — ISO 8601 timestamp set at creation
-- `tags` — array of strings
 
 **Optional system fields:**
 - `updated` — ISO 8601 timestamp, set on every write
@@ -348,5 +342,5 @@ This pattern is used in the integration tests to run three independent Foundatio
 - [Foundation](./foundation.md) — directory structure and context files in detail
 - [Context Types](./context-types.md) — field types, schema config, and type management
 - [REST API](./rest-api.md) — complete endpoint reference
-- [MCP Tools](./mcp-tools.md) — all 21 MCP tools with examples
+- [MCP Tools](./mcp-tools.md) — all 25 MCP tools with examples
 - [Search & Context](./search-and-context.md) — BM25, context tree scopes, analytics

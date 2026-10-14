@@ -109,7 +109,7 @@ TOKEN=$(cxms token)
 curl -X POST http://localhost:3800/cx/context-types/task \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title": "Review Q3 report", "tags": ["work"], "status": "open"}'
+  -d '{"title": "Review Q3 report", "status": "open"}'
 
 # Full-text search
 curl -X POST http://localhost:3800/cx/search \
@@ -165,7 +165,7 @@ const id = generateNodeId();
 const dir = await ensureEntityDir('note');
 await writeEntity(`${dir}/${nodeFilename('Agent memory snapshot', id)}`, {
   id, title: 'Agent memory snapshot', entityType: 'note',
-  created: new Date().toISOString(), tags: ['agent', 'memory'],
+  created: new Date().toISOString(),
 }, 'Key observations from today...');
 ```
 

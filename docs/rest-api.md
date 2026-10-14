@@ -266,8 +266,7 @@ Create a new context type. Creates the directory and `.cxms.md` context file.
   ],
   "completionField": "status",
   "completionValue": "done",
-  "calendarDateField": null,
-  "defaultTags": []
+  "calendarDateField": null
 }
 ```
 
@@ -281,7 +280,6 @@ Create a new context type. Creates the directory and `.cxms.md` context file.
 | `completionField` | No | Field that marks completion |
 | `completionValue` | No | Value that means "done" |
 | `calendarDateField` | No | Date/datetime field for calendar queries |
-| `defaultTags` | No | Tags applied to all new nodes |
 
 **Response `201 Created`:** Returns the created type config.
 
@@ -329,7 +327,6 @@ List nodes of a given type. Supports filtering and pagination.
 |------|----|------|-------------|
 | `type` | path | string | Context type name |
 | `status` | query | string | Filter by `status` field value |
-| `tag` | query | string | Filter to nodes with this tag |
 | `limit` | query | integer | Max nodes to return |
 | `offset` | query | integer | Skip this many nodes (for pagination) |
 
@@ -346,7 +343,6 @@ List nodes of a given type. Supports filtering and pagination.
       "id": "abc12345",
       "title": "Review Q3 report",
       "type": "task",
-      "tags": ["work", "urgent"],
       "summary": "Review the Q3 financial report before Friday standup.",
       "created": "2026-04-17T10:00:00.000Z",
       "updated": "2026-04-18T09:00:00.000Z",
@@ -366,8 +362,8 @@ List nodes of a given type. Supports filtering and pagination.
 curl "http://localhost:3800/cx/context-types/task?status=open" \
   -H "Authorization: Bearer $TOKEN"
 
-# Tasks tagged 'urgent', paginated
-curl "http://localhost:3800/cx/context-types/task?tag=urgent&limit=5&offset=0" \
+# Tasks, paginated
+curl "http://localhost:3800/cx/context-types/task?limit=5&offset=0" \
   -H "Authorization: Bearer $TOKEN"
 
 # All notes (no filter)
@@ -379,7 +375,7 @@ curl "http://localhost:3800/cx/context-types/note" \
 
 ### `GET /cx/context-types/:type/count`
 
-Count nodes of a given type. Optionally filter by status or tag (via query params — same as listing).
+Count nodes of a given type. Optionally filter by status (via query params — same as listing).
 
 **Response `200 OK`:**
 
@@ -409,7 +405,6 @@ Get a single node by ID. Returns full metadata, Markdown content, and ancestor c
   "id": "abc12345",
   "title": "Review Q3 report",
   "type": "task",
-  "tags": ["work", "urgent"],
   "summary": "Review the Q3 financial report before Friday standup.",
   "created": "2026-04-17T10:00:00.000Z",
   "updated": "2026-04-18T09:00:00.000Z",
@@ -439,7 +434,6 @@ Create a new context node.
 ```json
 {
   "title": "Review Q3 report",
-  "tags": ["work", "urgent"],
   "summary": "Review the Q3 financial report before Friday standup.",
   "content": "The report is in SharePoint under Finance > 2026 > Q3...",
   "status": "open",
@@ -450,7 +444,6 @@ Create a new context node.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `title` | Yes | Node title (used to generate the filename) |
-| `tags` | No | Array of tag strings |
 | `summary` | No | One-sentence summary |
 | `content` | No | Markdown body |
 | `references` | No | Array of reference strings |
@@ -481,7 +474,6 @@ curl -X POST http://localhost:3800/cx/context-types/task \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Review Q3 report",
-    "tags": ["work", "urgent"],
     "status": "open",
     "priority": "high",
     "content": "Review before Friday standup."
@@ -499,7 +491,6 @@ Update an existing node. Only the fields provided in the request body are change
 ```json
 {
   "status": "done",
-  "tags": ["work", "completed"],
   "content": "Reviewed and approved. No issues found."
 }
 ```
@@ -509,7 +500,6 @@ Update an existing node. Only the fields provided in the request body are change
 | Field | Description |
 |-------|-------------|
 | `title` | New title (filename is NOT renamed) |
-| `tags` | Replaces the tag array entirely |
 | `summary` | Replaces the summary |
 | `references` | Replaces the references array |
 | `content` | Replaces the Markdown body |
@@ -574,16 +564,14 @@ Full-text BM25 search across all nodes (or a specific type). Results are ranked 
 ```json
 {
   "query": "quarterly review finance",
-  "type": "task",
-  "tags": ["work"]
+  "type": "task"
 }
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `query` | Yes | Full-text search query (supports `tag:` prefix) |
+| `query` | Yes | Full-text search query |
 | `type` | No | Restrict results to this context type |
-| `tags` | No | Additional tag filter (AND logic) |
 
 **Response `200 OK`:**
 
@@ -597,7 +585,6 @@ Full-text BM25 search across all nodes (or a specific type). Results are ranked 
       "title": "Review Q3 report",
       "type": "task",
       "score": 4.72,
-      "tags": ["work", "urgent"],
       "summary": "Review the Q3 financial report before Friday standup."
     },
     {
@@ -605,7 +592,6 @@ Full-text BM25 search across all nodes (or a specific type). Results are ranked 
       "title": "Q3 Finance Review Notes",
       "type": "note",
       "score": 3.14,
-      "tags": ["finance"],
       "summary": null
     }
   ]
@@ -623,49 +609,11 @@ curl -X POST http://localhost:3800/cx/search \
   -H "Content-Type: application/json" \
   -d '{"query": "quarterly review"}'
 
-# Search only tasks, with tag filter
+# Search only tasks
 curl -X POST http://localhost:3800/cx/search \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query": "review", "type": "task", "tags": ["urgent"]}'
-
-# Tag-prefix query
-curl -X POST http://localhost:3800/cx/search \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "tag:urgent quarterly"}'
-```
-
----
-
-### `GET /cx/tag/:tag`
-
-Find all nodes with a specific tag, across all context types.
-
-**Parameters:**
-
-| Name | In | Description |
-|------|----|-------------|
-| `tag` | path | Tag to search for (URL-encoded) |
-
-**Response `200 OK`:**
-
-```json
-{
-  "tag": "urgent",
-  "count": 5,
-  "nodes": [
-    { "id": "abc12345", "title": "Review Q3 report", "type": "task", "tags": ["work", "urgent"] },
-    { "id": "def67890", "title": "Deploy hotfix", "type": "task", "tags": ["engineering", "urgent"] }
-  ]
-}
-```
-
-**Example:**
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:3800/cx/tag/urgent
+  -d '{"query": "review", "type": "task"}'
 ```
 
 ---
@@ -821,17 +769,17 @@ The response always includes `total` (total matching records before pagination) 
 
 ## Combining Filters
 
-For node listing, `status` and `tag` filters can be combined:
+For node listing, the `status` filter can be combined with pagination:
 
 ```bash
-# Open tasks tagged 'urgent'
-GET /cx/context-types/task?status=open&tag=urgent
+# First 10 open tasks
+GET /cx/context-types/task?status=open&limit=10
 ```
 
-For search, use the `type` and `tags` fields in the request body, or use `tag:` prefix syntax in the query string:
+For search, use the `type` field in the request body to restrict results to one context type:
 
 ```json
-{ "query": "quarterly tag:urgent", "type": "task" }
+{ "query": "quarterly", "type": "task" }
 ```
 
 ---
@@ -852,7 +800,6 @@ r = httpx.post(f"{BASE}/cx/context-types/task", headers=HEADERS, json={
     "title": "Review Q3 report",
     "status": "open",
     "priority": "high",
-    "tags": ["work"],
 })
 node_id = r.json()["id"]
 

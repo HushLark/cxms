@@ -12,7 +12,6 @@ A context type specifies:
 - **Directory** — where node files live inside the Foundation (`context-types/task`)
 - **Description** — a human-readable summary of what this type stores
 - **Fields** — typed field definitions that nodes of this type must validate against
-- **Default tags** — tags automatically applied to new nodes
 - **Completion semantics** — which field and value mark a node as "done" (used by the context tree and moment context)
 - **Calendar date field** — which field holds the date for calendar/timeline placement (used by date queries)
 - **Spawner config** — advanced: rules for generating child nodes from a parent
@@ -40,8 +39,7 @@ curl -X POST http://localhost:3800/cx/context-types \
     ],
     "completionField": "status",
     "completionValue": "done",
-    "calendarDateField": "due",
-    "defaultTags": []
+    "calendarDateField": "due"
   }'
 ```
 
@@ -98,7 +96,6 @@ await addEntityType({
     { key: 'company', type: 'string' },
     { key: 'last_contact', type: 'date' },
   ],
-  defaultTags: [],
 });
 ```
 
@@ -190,7 +187,7 @@ Enum validation checks that the stored value appears in the `values` array. Unkn
 
 ### `array`
 
-An array of strings. Useful for lists that aren't tags (tags are always arrays and handled separately).
+An array of strings. Useful for lists such as participants or attendees.
 
 ```json
 { "key": "participants", "type": "array", "label": "Meeting participants" }

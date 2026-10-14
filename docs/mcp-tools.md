@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-CxMS exposes 21 tools via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP) at the `/mcp` endpoint. Any MCP-compatible client — Claude Desktop, Cursor, or a custom agent — can connect and use these tools to manage Foundation data.
+CxMS exposes 25 tools via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP) at the `/mcp` endpoint. Any MCP-compatible client — Claude Desktop, Cursor, or a custom agent — can connect and use these tools to manage Foundation data.
 
 ---
 
@@ -66,7 +66,7 @@ The server responds with JSON or SSE (Server-Sent Events). Stateless mode: each 
 | [System](#system) | `health`, `get_analytics` |
 | [Context Types](#context-types) | `list_types`, `get_type`, `create_type`, `update_type`, `delete_type` |
 | [Context Nodes](#context-nodes) | `list_nodes`, `get_node`, `create_node`, `update_node`, `delete_node` |
-| [Search & Discovery](#search--discovery) | `search`, `search_by_tag`, `search_by_date_range` |
+| [Search & Discovery](#search--discovery) | `search`, `search_by_date_range` |
 | [Context & Summary](#context--summary) | `get_node_summary`, `count_nodes`, `get_moment`, `get_context_tree`, `get_vault_context` |
 | [Collections](#collections) | `list_collections`, `get_collection`, `set_collection_item`, `remove_collection_item` |
 
@@ -206,7 +206,6 @@ Create a new context type. Also creates the directory and `.cxms.md` context fil
 | `directory` | string | Yes | Storage path (`"context-types/habit"`) |
 | `description` | string | No | What this type represents |
 | `fields` | array | No | Field definitions (see below) |
-| `defaultTags` | string[] | No | Tags applied to all new nodes |
 | `completionField` | string | No | Field that marks completion |
 | `completionValue` | string | No | Value that means "done" |
 | `calendarDateField` | string | No | Date/datetime field for calendar queries |
@@ -266,7 +265,7 @@ Update an existing context type's schema. The `name` field is immutable.
 | `name` | string | Yes | Type name to update |
 | `config` | object | Yes | Fields to update (merged with existing) |
 
-`config` can include any type property except `name`: `plural`, `directory`, `description`, `fields`, `defaultTags`, `completionField`, `completionValue`, `calendarDateField`.
+`config` can include any type property except `name`: `plural`, `directory`, `description`, `fields`, `completionField`, `completionValue`, `calendarDateField`.
 
 **Returns:**
 
@@ -300,7 +299,7 @@ Remove a context type from the registry. Node files on disk are **not** deleted.
 
 ### `list_nodes`
 
-List context nodes of a given type. Returns titles, IDs, tags, and key metadata.
+List context nodes of a given type. Returns titles, IDs, and key metadata.
 
 **Parameters:**
 
@@ -308,7 +307,6 @@ List context nodes of a given type. Returns titles, IDs, tags, and key metadata.
 |------|------|----------|-------------|
 | `type` | string | Yes | Context type name |
 | `status` | string | No | Filter by `status` field value |
-| `tag` | string | No | Filter to nodes with this tag |
 | `limit` | number | No | Max results (default: all) |
 | `offset` | number | No | Skip N results (for pagination) |
 
@@ -319,7 +317,6 @@ List context nodes of a given type. Returns titles, IDs, tags, and key metadata.
   {
     "id": "abc12345",
     "title": "Review Q3 report",
-    "tags": ["work", "urgent"],
     "summary": "Review the Q3 financial report before Friday standup.",
     "status": "open",
     "priority": "high",
@@ -328,7 +325,7 @@ List context nodes of a given type. Returns titles, IDs, tags, and key metadata.
 ]
 ```
 
-**When to use:** To get an overview of what nodes exist before making decisions. For large vaults, use `status` and `tag` filters to narrow the result set, or use `search` instead.
+**When to use:** To get an overview of what nodes exist before making decisions. For large vaults, use the `status` filter and pagination to narrow the result set, or use `search` instead.
 
 ---
 
@@ -357,7 +354,6 @@ Lookup behavior:
     "title": "Review Q3 report",
     "entityType": "task",
     "created": "2026-04-17T10:00:00.000Z",
-    "tags": ["work", "urgent"],
     "status": "open",
     "priority": "high"
   },
@@ -381,7 +377,6 @@ Create a new context node in the Foundation. Validates fields against the type s
 | `type` | string | Yes | Context type name |
 | `title` | string | Yes | Node title |
 | `content` | string | No | Markdown body |
-| `tags` | string[] | No | Tags (merged with type's defaultTags) |
 | `fields` | object | No | Custom field values (`{ "status": "open", "priority": "high" }`) |
 
 **Returns:**
@@ -404,7 +399,6 @@ Create a new context node in the Foundation. Validates fields against the type s
 {
   "type": "task",
   "title": "Prepare Q3 investor presentation",
-  "tags": ["work", "finance", "urgent"],
   "content": "Slides due to CEO by EOD Thursday. Use Q3 report as source material.",
   "fields": {
     "status": "open",
@@ -428,8 +422,6 @@ Update an existing context node. Merges provided fields with existing metadata.
 | `id` | string | Yes | Node ID or title |
 | `title` | string | No | New title |
 | `content` | string | No | Replaces Markdown body |
-| `tags` | string[] | No | Replaces entire tag array |
-| `add_tags` | string[] | No | Adds to existing tags (deduplicated) |
 | `fields` | object | No | Custom fields to set/update |
 
 **Returns:**
@@ -448,15 +440,6 @@ Mark a task done:
   "type": "task",
   "id": "abc12345",
   "fields": { "status": "done" }
-}
-```
-
-Add tags without removing existing ones:
-```json
-{
-  "type": "note",
-  "id": "def67890",
-  "add_tags": ["reviewed", "shared"]
 }
 ```
 
@@ -508,7 +491,7 @@ Full-text BM25 search across all context nodes (or a specific type). Results are
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `query` | string | Yes | Search query. Supports `tag:` prefix. |
+| `query` | string | Yes | Search query (keywords or phrases). |
 | `type` | string | No | Restrict to this context type |
 | `limit` | number | No | Max results (default: 20) |
 
@@ -521,8 +504,7 @@ Full-text BM25 search across all context nodes (or a specific type). Results are
     "id": "abc12345",
     "title": "Review Q3 report",
     "score": 4.72,
-    "summary": "Review the Q3 financial report before Friday standup.",
-    "tags": ["work", "urgent"]
+    "summary": "Review the Q3 financial report before Friday standup."
   }
 ]
 ```
@@ -530,7 +512,6 @@ Full-text BM25 search across all context nodes (or a specific type). Results are
 **Search features:**
 - Stemming: `"meetings"` matches `"meeting"`, `"scheduled"` matches `"schedule"`
 - Field weighting: title matches score higher than body matches
-- Tag prefix: `"tag:urgent quarterly"` finds nodes tagged `urgent` AND matching `quarterly`
 - Cross-type: omitting `type` searches all types simultaneously
 
 **When to use:** As the primary retrieval mechanism when the agent needs to find relevant existing nodes before responding to a user query. Use `count_nodes` with a query first if you want a sense of how many matches exist before loading full results.
@@ -546,32 +527,8 @@ Full-text BM25 search across all context nodes (or a specific type). Results are
 ```
 
 ```json
-{ "query": "tag:urgent deadline", "type": "task" }
+{ "query": "urgent deadline", "type": "task" }
 ```
-
----
-
-### `search_by_tag`
-
-Find all context nodes with a specific tag, optionally filtered by type.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `tag` | string | Yes | Tag to search for (exact match) |
-| `type` | string | No | Restrict to this context type |
-
-**Returns:**
-
-```json
-[
-  { "type": "task",  "id": "abc12345", "title": "Deploy hotfix", "tags": ["urgent", "engineering"] },
-  { "type": "event", "id": "def67890", "title": "Urgent board call", "tags": ["urgent", "leadership"] }
-]
-```
-
-**When to use:** When the user references a specific tag (`"show me everything urgent"`, `"what's tagged finance"`). Faster than a full-text search when the tag is the primary discriminator.
 
 ---
 
@@ -604,7 +561,7 @@ Find context nodes whose calendar date field falls within a date range. Only typ
 
 ### `get_node_summary`
 
-Get a concise summary of a context node: title, tags, key fields, and up to 200 characters of content.
+Get a concise summary of a context node: title, key fields, and up to 200 characters of content.
 
 **Parameters:**
 
@@ -620,7 +577,6 @@ Get a concise summary of a context node: title, tags, key fields, and up to 200 
   "id": "abc12345",
   "title": "Review Q3 report",
   "type": "task",
-  "tags": ["work", "urgent"],
   "summary": "Review the Q3 financial report before Friday standup.",
   "created": "2026-04-17T10:00:00.000Z",
   "status": "open",
@@ -728,7 +684,7 @@ Build a token-budgeted hierarchical context tree for LLM consumption. The scope 
 | Scope | Description | Token cost |
 |-------|-------------|------------|
 | `trunk` | Root `.cxms.md` + vault stats (type list, total node count) | Minimal |
-| `branch` | Trunk + type schemas + recent node summaries (title, tags, metadata) | Medium |
+| `branch` | Trunk + type schemas + recent node summaries (title, metadata) | Medium |
 | `branch-full` | Branch but with full Markdown content of each node | Large |
 | `leaves` | Specific nodes by key, full content | Varies |
 | `cross` | Trunk + named branches + BM25 search results across types | Medium-Large |
@@ -752,7 +708,7 @@ Build a token-budgeted hierarchical context tree for LLM consumption. The scope 
         "subdirectoryContext": "# Tasks\n\n## Fields\n...",
         "leafCount": 23,
         "leaves": [
-          { "key": "task:abc12345", "title": "Review Q3 report", "tags": ["work", "urgent"], "summary": "...", "meta": {...} }
+          { "key": "task:abc12345", "title": "Review Q3 report", "summary": "...", "meta": {...} }
         ]
       }
     ],

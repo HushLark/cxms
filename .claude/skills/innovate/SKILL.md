@@ -59,13 +59,11 @@ Common gaps:
 - `src/index/entity-index.ts` — inverted index, relationship graph, `searchEntities()`
 - `src/context/query-relevance.ts` — relevance ranking for context tree
 
-Current field weights: Title (5×), Tags (3×), Summary (2×), Custom fields (1.5×), Body (1×)
+Current field weights: Title (5×), Summary (2×), Custom fields (1.5×), Body (1×)
 
 Common gaps:
 - Stopword list missing or too short (a, an, the, is, are, was...)
 - Exact phrase matching not boosted above individual terms
-- Tag search does substring match instead of normalized exact match
-- Search doesn't handle multi-word tags
 - `k1` and `b` BM25 params not tuned for typical vault sizes
 - Short queries (≤2 chars) not handled gracefully
 

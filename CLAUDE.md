@@ -55,7 +55,7 @@ Foundation root is any directory containing `.cxms.md`. `paths.ts` computes all 
 ### 5. Indexing & Search (`src/index/`)
 - `entity-index.ts` — in-memory inverted index + relationship graph; built on startup via `getEntityIndex().build()`
 - `bm25.ts` + `stemmer.ts` — BM25 full-text search with Porter stemming
-- Field weights: Title (5×), Tags (3×), Summary (2×), Custom fields (1.5×), Body (1×)
+- Field weights: Title (5×), Summary (2×), Custom fields (1.5×), Body (1×)
 
 ### 6. Context (`src/context/`)
 - `context-tree.ts` — token-budgeted hierarchical context tree for LLM consumption
@@ -65,7 +65,7 @@ Foundation root is any directory containing `.cxms.md`. `paths.ts` computes all 
 
 ### 7. Server (`src/server/`)
 - `cx-router.ts` — REST API (GET/POST/PUT/DELETE for types, nodes, search, collections)
-- `mcp-server.ts` — MCP tool server via StreamableHTTP transport (15 tools)
+- `mcp-server.ts` — MCP tool server via StreamableHTTP transport (25 tools)
 - `system-config.ts` — loads `~/.cxms/config.json` and bearer tokens
 - `auth.ts` — bearer token authentication
 - Default port: 3800

@@ -8,7 +8,8 @@
 //   Context Types:  list_types, get_type, create_type, update_type, delete_type
 //   Context Nodes:  list_nodes, get_node, create_node, update_node, delete_node
 //   Search:         search, batch_get_nodes, search_by_date_range
-//   Context:        get_node_summary, count_nodes, get_moment, get_context_tree
+//   Context:        get_node_summary, count_nodes, get_moment, get_context_tree,
+//                   get_vault_context
 //   Collections:    list_collections, get_collection, set_collection_item,
 //                   remove_collection_item
 //   System:         health, get_analytics, onboard_status

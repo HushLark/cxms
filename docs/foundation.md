@@ -46,7 +46,6 @@ my-foundation/
 ---
 title: "My Foundation"
 created: 2026-04-18
-tags: [context, system, root]
 ---
 
 # My Foundation
@@ -84,7 +83,6 @@ await fs.mkdir(path.join(foundationDir, '.trash'), { recursive: true });
 await fs.writeFile(path.join(foundationDir, '.cxms.md'), `---
 title: "My Foundation"
 created: ${new Date().toISOString().split('T')[0]}
-tags: [context, system, root]
 ---
 
 # My Foundation
@@ -155,7 +153,6 @@ The root `.cxms.md` is the Foundation marker and the highest-level context docum
 ---
 title: "My Foundation"
 created: 2026-04-18
-tags: [context, system, root]
 ---
 ```
 
@@ -233,7 +230,6 @@ entityType: task
 status: open
 priority: high
 due: 2026-04-25
-tags: [finance, admin]
 ---
 
 Submit April receipts through the Concur portal before month-end close.
@@ -248,7 +244,6 @@ title: Review Q1 roadmap
 entityType: task
 status: done
 priority: medium
-tags: [planning]
 ---
 
 Reviewed and signed off with the product team on 2026-03-15.
@@ -274,7 +269,6 @@ All nodes have these system fields in their frontmatter:
 | `entityType` | string | The context type name (e.g. `task`) |
 | `created` | ISO 8601 | Set at creation, never changed |
 | `updated` | ISO 8601 | Updated on every write (optional but set by the server) |
-| `tags` | string[] | Array of tag strings |
 
 Optional system fields:
 

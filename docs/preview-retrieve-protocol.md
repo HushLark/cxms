@@ -24,7 +24,7 @@ The naïve middle ground — loading a whole context type — still loads irrele
 
 ### Phase 1 — SEARCH (no LLM cost)
 
-Query CxMS with keywords. The BM25 index returns lightweight **previews**: title, tags, summary, custom fields (status, priority, etc.), and a configurable body snippet. Full content is deliberately excluded.
+Query CxMS with keywords. The BM25 index returns lightweight **previews**: title, summary, custom fields (status, priority, etc.), and a configurable body snippet. Full content is deliberately excluded.
 
 ```
 POST /cx/search
@@ -46,7 +46,6 @@ Response:
       "title": "Fix authentication bug in login flow",
       "type": "task",
       "score": 8.43,
-      "tags": ["engineering", "security", "bug"],
       "summary": "JWT refresh race condition causing 401s after 30 minutes",
       "fields": { "status": "open", "priority": "critical", "project": "platform" },
       "bodySnippet": "Users report intermittent 401 errors on login. The JWT refresh logic in auth.ts:142 appears to race with token expiry..."
@@ -56,7 +55,7 @@ Response:
 }
 ```
 
-**What the LLM sees in Phase 1:** title, tags, summary, key structured fields, and a body snippet — enough to judge relevance, not the full document.
+**What the LLM sees in Phase 1:** title, summary, key structured fields, and a body snippet — enough to judge relevance, not the full document.
 
 **Token cost at scale:** ~50–150 tokens per preview. For 15 results ≈ 750–2250 tokens regardless of how long the actual node bodies are.
 
@@ -85,7 +84,6 @@ Query: "authentication JWT security"
 Previews:
 [1] type=task id=abc12345 score=8.430
     title: Fix authentication bug in login flow
-    tags: engineering, security, bug
     fields: {"status":"open","priority":"critical","project":"platform"}
     summary: JWT refresh race condition causing 401s after 30 minutes
     snippet: Users report intermittent 401 errors on login...
@@ -136,7 +134,6 @@ Response:
       "status": "open",
       "priority": "critical",
       "content": "Users report intermittent 401 errors on login. The JWT refresh logic in auth.ts:142...\n\nReproduce: log in, wait 30 minutes, make an API call...",
-      "tags": ["engineering", "security", "bug"],
       "references": []
     },
     ...
@@ -253,8 +250,6 @@ The `search` tool description explicitly instructs the agent to use `batch_get_n
 
 **Keywords work better than questions:** `"JWT authentication race condition"` scores better than `"what is causing login failures"`.
 
-**Tag filters narrow scope:** `"security tag:engineering"` returns only nodes tagged `engineering` that also match the BM25 query.
-
 **Type filters focus retrieval:** `{ "query": "quarterly report", "type": "task" }` skips notes and people.
 
 **Snippet length trade-off:** Longer snippets help Phase 2 reasoning but cost more tokens. 150–250 chars is the sweet spot for most use cases. Increase to 400–500 for technical content where context matters more.
@@ -300,6 +295,6 @@ The test seeds 20 nodes across three types, validates all three phases, measures
 
 ## See Also
 
-- [Search & Context](./search-and-context.md) — BM25 algorithm, field weights, tag filters
+- [Search & Context](./search-and-context.md) — BM25 algorithm, field weights
 - [REST API](./rest-api.md) — `/cx/search` and `/cx/nodes/batch` endpoint details
 - [MCP Tools](./mcp-tools.md) — `search` and `batch_get_nodes` tool reference
