@@ -14,8 +14,8 @@
 //   System:         health, get_analytics, onboard_status
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { toNodeHandler, type NodeMcpRequestHandler } from '@modelcontextprotocol/node';
 import { z } from 'zod';
 import type http from 'http';
 import { findFoundationRoot } from '../foundation.js';
@@ -69,8 +69,7 @@ import { getOnboardingStatus } from '../onboarding/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-let _server: McpServer | null = null;
-let _transport: StreamableHTTPServerTransport | null = null;
+let _handler: NodeMcpRequestHandler | null = null;
 
 function ok(data: unknown) {
     return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -81,25 +80,25 @@ function err(error: unknown) {
     return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true as const };
 }
 
-function getOrCreateServer(): McpServer {
-    if (_server) return _server;
-
-    _server = new McpServer(
+function createServer(): McpServer {
+    const server = new McpServer(
         { name: 'cxms', version: '1.0.0' },
         { capabilities: { tools: { listChanged: false } } },
     );
 
-    registerTools(_server);
-    return _server;
+    registerTools(server);
+    return server;
 }
 
 function registerTools(server: McpServer): void {
     // ── Health ────────────────────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'health',
-        'Check CxMS health — foundation path, context type count, index stats.',
-        {},
+        {
+            description: 'Check CxMS health — foundation path, context type count, index stats.',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 const root = findFoundationRoot();
@@ -119,10 +118,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_analytics',
-        'Get vault analytics: disk usage (total bytes, formatted), file counts, trash size, and node count per context type.',
-        {},
+        {
+            description: 'Get vault analytics: disk usage (total bytes, formatted), file counts, trash size, and node count per context type.',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 return ok(await getVaultAnalytics());
@@ -130,10 +131,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'onboard_status',
-        'Check whether this Foundation has been onboarded — returns completion status, user name, agent name, and role.',
-        {},
+        {
+            description: 'Check whether this Foundation has been onboarded — returns completion status, user name, agent name, and role.',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 return ok(await getOnboardingStatus());
@@ -143,10 +146,12 @@ function registerTools(server: McpServer): void {
 
     // ── Context Types ────────────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'list_types',
-        'List all context types with their schemas (fields, completion, calendar, spawner).',
-        {},
+        {
+            description: 'List all context types with their schemas (fields, completion, calendar, spawner).',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 const types = await loadEntityTypes();
@@ -166,10 +171,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_type',
-        'Get the full schema for a single context type, including its .cxms.md context.',
-        { type: z.string().describe('Context type name (e.g. "task", "event")') },
+        {
+            description: 'Get the full schema for a single context type, including its .cxms.md context.',
+            inputSchema: z.object({ type: z.string().describe('Context type name (e.g. "task", "event")') }),
+        },
         async ({ type }) => {
             try {
                 const config = await getEntityType(type);
@@ -180,25 +187,27 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'create_type',
-        'Create a new context type with fields, directory, and optional completion/calendar config.',
         {
-            name: z.string().describe('Type name (singular, lowercase, e.g. "habit")'),
-            plural: z.string().describe('Plural form (e.g. "habits")'),
-            directory: z.string().describe('Storage directory (e.g. "context-types/habit")'),
-            description: z.string().optional().describe('What this type represents'),
-            fields: z.array(z.object({
-                key: z.string(),
-                type: z.enum(['string', 'number', 'boolean', 'date', 'datetime', 'duration', 'enum', 'array', 'object']),
-                label: z.string().optional(),
-                required: z.boolean().optional(),
-                values: z.array(z.string()).optional(),
-            })).describe('Field definitions'),
-            defaultTags: z.array(z.string()).optional(),
-            completionField: z.string().optional().describe('Field name that marks completion'),
-            completionValue: z.string().optional().describe('Value that means "done"'),
-            calendarDateField: z.string().optional().describe('Field for calendar placement'),
+            description: 'Create a new context type with fields, directory, and optional completion/calendar config.',
+            inputSchema: z.object({
+                name: z.string().describe('Type name (singular, lowercase, e.g. "habit")'),
+                plural: z.string().describe('Plural form (e.g. "habits")'),
+                directory: z.string().describe('Storage directory (e.g. "context-types/habit")'),
+                description: z.string().optional().describe('What this type represents'),
+                fields: z.array(z.object({
+                    key: z.string(),
+                    type: z.enum(['string', 'number', 'boolean', 'date', 'datetime', 'duration', 'enum', 'array', 'object']),
+                    label: z.string().optional(),
+                    required: z.boolean().optional(),
+                    values: z.array(z.string()).optional(),
+                })).describe('Field definitions'),
+                defaultTags: z.array(z.string()).optional(),
+                completionField: z.string().optional().describe('Field name that marks completion'),
+                completionValue: z.string().optional().describe('Value that means "done"'),
+                calendarDateField: z.string().optional().describe('Field for calendar placement'),
+            }),
         },
         async (params) => {
             try {
@@ -219,27 +228,29 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'update_type',
-        'Update an existing context type schema.',
         {
-            name: z.string().describe('Type name to update'),
-            config: z.object({
-                plural: z.string().optional(),
-                directory: z.string().optional(),
-                description: z.string().optional(),
-                fields: z.array(z.object({
-                    key: z.string(),
-                    type: z.enum(['string', 'number', 'boolean', 'date', 'datetime', 'duration', 'enum', 'array', 'object']),
-                    label: z.string().optional(),
-                    required: z.boolean().optional(),
-                    values: z.array(z.string()).optional(),
-                })).optional(),
-                defaultTags: z.array(z.string()).optional(),
-                completionField: z.string().optional(),
-                completionValue: z.string().optional(),
-                calendarDateField: z.string().optional(),
-            }).describe('Fields to update (merged with existing)'),
+            description: 'Update an existing context type schema.',
+            inputSchema: z.object({
+                name: z.string().describe('Type name to update'),
+                config: z.object({
+                    plural: z.string().optional(),
+                    directory: z.string().optional(),
+                    description: z.string().optional(),
+                    fields: z.array(z.object({
+                        key: z.string(),
+                        type: z.enum(['string', 'number', 'boolean', 'date', 'datetime', 'duration', 'enum', 'array', 'object']),
+                        label: z.string().optional(),
+                        required: z.boolean().optional(),
+                        values: z.array(z.string()).optional(),
+                    })).optional(),
+                    defaultTags: z.array(z.string()).optional(),
+                    completionField: z.string().optional(),
+                    completionValue: z.string().optional(),
+                    calendarDateField: z.string().optional(),
+                }).describe('Fields to update (merged with existing)'),
+            }),
         },
         async ({ name, config }) => {
             try {
@@ -252,10 +263,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'delete_type',
-        'Remove a context type. Built-in types cannot be removed.',
-        { name: z.string().describe('Type name to delete') },
+        {
+            description: 'Remove a context type. Built-in types cannot be removed.',
+            inputSchema: z.object({ name: z.string().describe('Type name to delete') }),
+        },
         async ({ name }) => {
             try {
                 await removeEntityType(name);
@@ -266,15 +279,17 @@ function registerTools(server: McpServer): void {
 
     // ── Context Nodes ────────────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'list_nodes',
-        'List context nodes of a given type. Returns titles, IDs, tags, and key metadata.',
         {
-            type: z.string().describe('Context type (e.g. "task", "event", "note")'),
-            status: z.string().optional().describe('Filter by status field'),
-            tag: z.string().optional().describe('Filter by tag'),
-            limit: z.number().optional().describe('Max results (default all)'),
-            offset: z.number().optional().describe('Skip N results'),
+            description: 'List context nodes of a given type. Returns titles, IDs, tags, and key metadata.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type (e.g. "task", "event", "note")'),
+                status: z.string().optional().describe('Filter by status field'),
+                tag: z.string().optional().describe('Filter by tag'),
+                limit: z.number().optional().describe('Max results (default all)'),
+                offset: z.number().optional().describe('Skip N results'),
+            }),
         },
         async ({ type, status, tag, limit, offset }) => {
             try {
@@ -300,12 +315,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_node',
-        'Get a single context node by type and ID or title. Returns full metadata, content, and ancestor context.',
         {
-            type: z.string().describe('Context type'),
-            id: z.string().describe('Node ID or title'),
+            description: 'Get a single context node by type and ID or title. Returns full metadata, content, and ancestor context.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type'),
+                id: z.string().describe('Node ID or title'),
+            }),
         },
         async ({ type, id }) => {
             try {
@@ -320,15 +337,17 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'create_node',
-        'Create a new context node in the Foundation. Validates fields against the type schema.',
         {
-            type: z.string().describe('Context type'),
-            title: z.string().describe('Node title'),
-            content: z.string().optional().describe('Markdown body'),
-            tags: z.array(z.string()).optional().describe('Tags'),
-            fields: z.record(z.string(), z.unknown()).optional().describe('Additional frontmatter fields'),
+            description: 'Create a new context node in the Foundation. Validates fields against the type schema.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type'),
+                title: z.string().describe('Node title'),
+                content: z.string().optional().describe('Markdown body'),
+                tags: z.array(z.string()).optional().describe('Tags'),
+                fields: z.record(z.string(), z.unknown()).optional().describe('Additional frontmatter fields'),
+            }),
         },
         async ({ type, title, content, tags, fields }) => {
             try {
@@ -359,17 +378,19 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'update_node',
-        'Update an existing context node. Merges provided fields with existing metadata.',
         {
-            type: z.string().describe('Context type'),
-            id: z.string().describe('Node ID or title'),
-            title: z.string().optional().describe('New title'),
-            content: z.string().optional().describe('New markdown body'),
-            tags: z.array(z.string()).optional().describe('Replace tags'),
-            add_tags: z.array(z.string()).optional().describe('Add tags to existing'),
-            fields: z.record(z.string(), z.unknown()).optional().describe('Fields to set/update'),
+            description: 'Update an existing context node. Merges provided fields with existing metadata.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type'),
+                id: z.string().describe('Node ID or title'),
+                title: z.string().optional().describe('New title'),
+                content: z.string().optional().describe('New markdown body'),
+                tags: z.array(z.string()).optional().describe('Replace tags'),
+                add_tags: z.array(z.string()).optional().describe('Add tags to existing'),
+                fields: z.record(z.string(), z.unknown()).optional().describe('Fields to set/update'),
+            }),
         },
         async ({ type, id, title, content, tags, add_tags, fields }) => {
             try {
@@ -399,12 +420,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'delete_node',
-        'Soft-delete a context node by moving it to .trash/.',
         {
-            type: z.string().describe('Context type'),
-            id: z.string().describe('Node ID or title'),
+            description: 'Soft-delete a context node by moving it to .trash/.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type'),
+                id: z.string().describe('Node ID or title'),
+            }),
         },
         async ({ type, id }) => {
             try {
@@ -418,14 +441,16 @@ function registerTools(server: McpServer): void {
 
     // ── Search & Discovery ───────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'search',
-        'Full-text BM25 search across context nodes. Returns ranked previews: title, tags, summary, key custom fields, and a body snippet. Use batch_get_nodes to fetch full content for selected results.',
         {
-            query: z.string().describe('Search query — keywords, phrases, or tag:value filters'),
-            type: z.string().optional().describe('Filter to a single context type'),
-            limit: z.number().optional().describe('Max results (default 20)'),
-            snippetLength: z.number().optional().describe('Body preview length in chars (default 200, max 500)'),
+            description: 'Full-text BM25 search across context nodes. Returns ranked previews: title, tags, summary, key custom fields, and a body snippet. Use batch_get_nodes to fetch full content for selected results.',
+            inputSchema: z.object({
+                query: z.string().describe('Search query — keywords, phrases, or tag:value filters'),
+                type: z.string().optional().describe('Filter to a single context type'),
+                limit: z.number().optional().describe('Max results (default 20)'),
+                snippetLength: z.number().optional().describe('Body preview length in chars (default 200, max 500)'),
+            }),
         },
         async ({ query, type, limit, snippetLength }) => {
             try {
@@ -458,14 +483,16 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'batch_get_nodes',
-        'Fetch full content for multiple nodes in one call. Use after search to retrieve only the nodes the agent has selected as relevant. Limit: 50 nodes per request.',
         {
-            nodes: z.array(z.object({
-                type: z.string().describe('Context type name'),
-                id: z.string().describe('Node ID'),
-            })).describe('List of nodes to fetch'),
+            description: 'Fetch full content for multiple nodes in one call. Use after search to retrieve only the nodes the agent has selected as relevant. Limit: 50 nodes per request.',
+            inputSchema: z.object({
+                nodes: z.array(z.object({
+                    type: z.string().describe('Context type name'),
+                    id: z.string().describe('Node ID'),
+                })).describe('List of nodes to fetch'),
+            }),
         },
         async ({ nodes }) => {
             try {
@@ -498,12 +525,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'search_by_tag',
-        'Find all context nodes with a specific tag, optionally filtered by type.',
         {
-            tag: z.string().describe('Tag to search for'),
-            type: z.string().optional().describe('Filter to context type'),
+            description: 'Find all context nodes with a specific tag, optionally filtered by type.',
+            inputSchema: z.object({
+                tag: z.string().describe('Tag to search for'),
+                type: z.string().optional().describe('Filter to context type'),
+            }),
         },
         async ({ tag, type }) => {
             try {
@@ -525,13 +554,15 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'search_by_date_range',
-        'Find context nodes with a calendar date field within a date range.',
         {
-            start: z.string().describe('Start date (YYYY-MM-DD)'),
-            end: z.string().describe('End date (YYYY-MM-DD)'),
-            type: z.string().optional().describe('Filter to context type'),
+            description: 'Find context nodes with a calendar date field within a date range.',
+            inputSchema: z.object({
+                start: z.string().describe('Start date (YYYY-MM-DD)'),
+                end: z.string().describe('End date (YYYY-MM-DD)'),
+                type: z.string().optional().describe('Filter to context type'),
+            }),
         },
         async ({ start, end, type }) => {
             try {
@@ -562,12 +593,14 @@ function registerTools(server: McpServer): void {
 
     // ── Context & Summary ────────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'get_node_summary',
-        'Get a concise summary of a context node — title, tags, key fields, and first 200 chars of content.',
         {
-            type: z.string().describe('Context type'),
-            id: z.string().describe('Node ID or title'),
+            description: 'Get a concise summary of a context node — title, tags, key fields, and first 200 chars of content.',
+            inputSchema: z.object({
+                type: z.string().describe('Context type'),
+                id: z.string().describe('Node ID or title'),
+            }),
         },
         async ({ type, id }) => {
             try {
@@ -593,12 +626,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'count_nodes',
-        'Count context nodes per type, or for a specific type. Optionally filter by search terms to see how many nodes match in each type.',
         {
-            type: z.string().optional().describe('Specific type to count'),
-            query: z.string().optional().describe('Search terms — returns match counts per type'),
+            description: 'Count context nodes per type, or for a specific type. Optionally filter by search terms to see how many nodes match in each type.',
+            inputSchema: z.object({
+                type: z.string().optional().describe('Specific type to count'),
+                query: z.string().optional().describe('Search terms — returns match counts per type'),
+            }),
         },
         async ({ type, query }) => {
             try {
@@ -634,10 +669,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_moment',
-        'Get real-time context: current date/time, overdue tasks, today\'s schedule, upcoming tasks.',
-        { user_name: z.string().optional().describe('User name for greeting') },
+        {
+            description: 'Get real-time context: current date/time, overdue tasks, today\'s schedule, upcoming tasks.',
+            inputSchema: z.object({ user_name: z.string().optional().describe('User name for greeting') }),
+        },
         async ({ user_name }) => {
             try {
                 const moment = buildMomentContext(user_name);
@@ -649,14 +686,16 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_context_tree',
-        'Build a token-budgeted context tree for LLM consumption. Specify scope to control what\'s included.',
         {
-            scope_type: z.enum(['trunk', 'branch', 'branch-full', 'leaves', 'cross'])
-                .optional().describe('Scope type (default "trunk")'),
-            branches: z.array(z.string()).optional().describe('Context types to include as branches'),
-            query: z.string().optional().describe('Query for leaf-level scope'),
+            description: 'Build a token-budgeted context tree for LLM consumption. Specify scope to control what\'s included.',
+            inputSchema: z.object({
+                scope_type: z.enum(['trunk', 'branch', 'branch-full', 'leaves', 'cross'])
+                    .optional().describe('Scope type (default "trunk")'),
+                branches: z.array(z.string()).optional().describe('Context types to include as branches'),
+                query: z.string().optional().describe('Query for leaf-level scope'),
+            }),
         },
         async ({ scope_type, branches, query }) => {
             try {
@@ -686,10 +725,12 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_vault_context',
-        'Read the root .cxms.md context file from the Foundation.',
-        {},
+        {
+            description: 'Read the root .cxms.md context file from the Foundation.',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 const ctx = await getVaultContext();
@@ -700,10 +741,12 @@ function registerTools(server: McpServer): void {
 
     // ── Collections ──────────────────────────────────────────────────────
 
-    server.tool(
+    server.registerTool(
         'list_collections',
-        'List all key-value collections in the Foundation.',
-        {},
+        {
+            description: 'List all key-value collections in the Foundation.',
+            inputSchema: z.object({}),
+        },
         async () => {
             try {
                 const names = await listCollections();
@@ -712,12 +755,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'get_collection',
-        'Get a collection by name, or a single item by key.',
         {
-            name: z.string().describe('Collection name'),
-            key: z.string().optional().describe('Specific item key (omit for full collection)'),
+            description: 'Get a collection by name, or a single item by key.',
+            inputSchema: z.object({
+                name: z.string().describe('Collection name'),
+                key: z.string().optional().describe('Specific item key (omit for full collection)'),
+            }),
         },
         async ({ name, key }) => {
             try {
@@ -733,14 +778,16 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'set_collection_item',
-        'Set or update a key-value item in a collection.',
         {
-            name: z.string().describe('Collection name'),
-            key: z.string().describe('Item key'),
-            value: z.string().describe('Item value'),
-            description: z.string().optional().describe('Collection description (used on create)'),
+            description: 'Set or update a key-value item in a collection.',
+            inputSchema: z.object({
+                name: z.string().describe('Collection name'),
+                key: z.string().describe('Item key'),
+                value: z.string().describe('Item value'),
+                description: z.string().optional().describe('Collection description (used on create)'),
+            }),
         },
         async ({ name, key, value, description }) => {
             try {
@@ -750,12 +797,14 @@ function registerTools(server: McpServer): void {
         },
     );
 
-    server.tool(
+    server.registerTool(
         'remove_collection_item',
-        'Remove a key-value item from a collection.',
         {
-            name: z.string().describe('Collection name'),
-            key: z.string().describe('Item key to remove'),
+            description: 'Remove a key-value item from a collection.',
+            inputSchema: z.object({
+                name: z.string().describe('Collection name'),
+                key: z.string().describe('Item key to remove'),
+            }),
         },
         async ({ name, key }) => {
             try {
@@ -770,30 +819,29 @@ function registerTools(server: McpServer): void {
 // ── HTTP Handler ─────────────────────────────────────────────────────────────
 
 /**
- * Handle an MCP request via Streamable HTTP transport.
- * Route: POST /mcp, GET /mcp, DELETE /mcp
+ * Handle an MCP request via Streamable HTTP. Route: /mcp
+ *
+ * Speaks MCP 2026-07-28 (stateless: per-request _meta, server/discover) and
+ * still serves 2025-era clients that open with an initialize handshake —
+ * createMcpHandler answers each legacy request from a fresh server instance.
  */
 export async function handleMcpRoute(
     req: http.IncomingMessage,
     res: http.ServerResponse,
 ): Promise<void> {
-    const server = getOrCreateServer();
-
-    if (!_transport) {
-        _transport = new StreamableHTTPServerTransport({
-            sessionIdGenerator: undefined, // stateless
-        });
-        await server.connect(_transport);
-        debug('mcp-server', 'CxMS MCP server transport connected');
+    if (!_handler) {
+        _handler = toNodeHandler(createMcpHandler(createServer, {
+            onerror: e => debug('mcp-server', e),
+        }));
+        debug('mcp-server', 'CxMS MCP handler created');
     }
 
-    await _transport.handleRequest(req, res);
+    await _handler(req, res);
 }
 
 /**
- * Reset server and transport. Used for testing.
+ * Reset the handler. Used for testing.
  */
 export function resetMcpServer(): void {
-    _server = null;
-    _transport = null;
+    _handler = null;
 }

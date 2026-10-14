@@ -208,10 +208,6 @@ async function startServer(foundationDir) {
         if (url.pathname.startsWith('/cx/')) {
             await handleCxRoute(req, res, url);
         } else if (url.pathname === '/mcp') {
-            // StreamableHTTPServerTransport is designed for single long-lived connections.
-            // Reset it before each request so every MCP call gets a fresh transport
-            // that handles the full JSON-RPC exchange independently (stateless mode).
-            resetMcpServer();
             await handleMcpRoute(req, res);
         } else {
             res.writeHead(404, { 'Content-Type': 'application/json' });

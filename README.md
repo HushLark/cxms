@@ -4,7 +4,7 @@ CxMS gives AI agents structured, persistent memory. Agents store and retrieve kn
 
 ## Quick Start
 
-Requires Node.js 18+.
+Requires Node.js 20+.
 
 ```bash
 # 1. Install the CLI
@@ -58,7 +58,7 @@ See [Getting Started](#getting-started) for the full walkthrough, including embe
 - **Relationship graph** — edges extracted automatically from `@mentions`, `[[references]]`, and frontmatter links
 - **Token-budgeted context tree** — agents load exactly the right memory for a query without blowing their context window
 - **Vault analytics** — disk usage, file counts, and node counts per type via REST and MCP
-- **Dual interface** — REST API for any language or framework, MCP tools for Claude Desktop, Cursor, and compatible agents
+- **Dual interface** — REST API for any language or framework, MCP tools for Claude, Cursor, and compatible agents (MCP protocol `2026-07-28`, with fallback to `2025-11-25` for older clients)
 - **Platform-agnostic** — file I/O abstracted so CxMS runs on Node.js, React Native, or any custom runtime
 
 ---

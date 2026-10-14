@@ -165,4 +165,4 @@ Go back to Step 1. After each loop, pick the next most impactful improvement. St
 5. **Name the problem first** — write one sentence describing the bug/gap before editing.
 6. **Revert failures** — if a change doesn't help or regresses, revert before next loop.
 7. **No TODOs** — don't leave TODO comments; either fix it now or skip it.
-8. **No new dependencies** — use what's already in package.json (gray-matter, zod, @modelcontextprotocol/sdk).
+8. **No new dependencies** — use what's already in package.json (gray-matter, zod, @modelcontextprotocol/server, @modelcontextprotocol/node).

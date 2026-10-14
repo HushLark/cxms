@@ -192,7 +192,7 @@ The server layer exposes everything above via HTTP.
 
 **REST router** (`cx-router.ts`) — handles `/cx/*` routes. All routes except `/cx/health` require a bearer token. Errors are returned as [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) with `Content-Type: application/problem+json`.
 
-**MCP server** (`mcp-server.ts`) — uses `@modelcontextprotocol/sdk` with `StreamableHTTPServerTransport` to expose 21 tools at `/mcp`. The transport is stateless (`sessionIdGenerator: undefined`) — each HTTP POST to `/mcp` is handled as an independent request.
+**MCP server** (`mcp-server.ts`) — uses the v2 MCP TypeScript SDK (`@modelcontextprotocol/server` + `@modelcontextprotocol/node`) to expose 26 tools at `/mcp` over Streamable HTTP. It speaks MCP protocol revision `2026-07-28` (stateless: no sessions or `initialize`; clients call `server/discover` and send their protocol version in each request's `_meta`) and still serves 2025-era clients that open with `initialize`, negotiating `2025-11-25`. `createMcpHandler` builds a fresh server per request, so every HTTP POST to `/mcp` is independent.
 
 **Auth** (`auth.ts`) — bearer token stored in `~/.cxms/token`. Load with `loadBearerToken()`, regenerate with `regenerateToken()`. Disable entirely with `setAuthEnabled(false)`.
 
