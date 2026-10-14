@@ -1,6 +1,6 @@
 {
   "name": "@gclift/cxms",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Context Management System — storage, index, search, and context tree for Foundation entities",
   "type": "module",
   "main": "dist/index.js",

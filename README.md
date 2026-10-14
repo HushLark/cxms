@@ -10,8 +10,9 @@ Requires Node.js 20+.
 # 1. Install the CLI
 npm install -g @gclift/cxms
 
-# 2. Create a Foundation (pick a folder, answer a short interview)
-cxms setup
+# 2. Create a Foundation in a new folder
+mkdir my-foundation && cd my-foundation
+cxms init
 
 # 3. Run the server in the background on http://localhost:3800
 cxms start
@@ -176,8 +177,6 @@ await writeEntity(`${dir}/${nodeFilename('Agent memory snapshot', id)}`, {
 ```
 cxms                              Start the server in the foreground
 cxms init                         Initialize a Foundation in the current directory
-cxms setup                        Guided setup — choose vault location + interview
-cxms onboard                      Run the first-time setup interview
 cxms token                        Print the bearer token
 cxms token --regenerate           Regenerate the bearer token
 
