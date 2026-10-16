@@ -13,6 +13,7 @@ echo "── Test ──"
 node test/analytics.test.mjs
 node test/preview-retrieve.test.mjs
 node test/onboarding.test.mjs
+node test/mcp-auth.test.mjs
 
 echo "── Bump patch version ──"
 NEW_VERSION=$(node -p "

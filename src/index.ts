@@ -153,6 +153,7 @@ export {
 } from './server/problem-details.js';
 export { authenticateRequest, setAuthEnabled, isAuthEnabled, resetCachedToken } from './server/auth.js';
 export { handleMcpRoute, resetMcpServer } from './server/mcp-server.js';
+export { handleRequest } from './server/http-handler.js';
 export type { CxmsConfig } from './server/system-config.js';
 export {
     getSystemDir,

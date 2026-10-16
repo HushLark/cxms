@@ -18,6 +18,7 @@ bash ship.sh       # Build, bump patch version, commit, push to origin main
 **Integration test** (manual, no test runner):
 ```bash
 node test/federated-cxms.test.mjs
+node test/mcp-auth.test.mjs   # /mcp requires the bearer token
 ```
 
 **CLI usage** (after build):

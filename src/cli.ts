@@ -33,8 +33,7 @@ import {
     setInstanceIdentity,
     getInstanceIdentity,
 } from './server/system-config.js';
-import { handleCxRoute } from './server/cx-router.js';
-import { handleMcpRoute } from './server/mcp-server.js';
+import { handleRequest } from './server/http-handler.js';
 import { setAuthEnabled } from './server/auth.js';
 import { getEntityIndex } from './index/entity-index.js';
 import { FOUNDATION_MARKER } from './types.js';
@@ -560,24 +559,7 @@ async function startServer(opts: {
     }
 
     // Start HTTP server
-    const server = http.createServer(async (req, res) => {
-        const url = new URL(req.url || '/', `http://${req.headers.host}`);
-
-        // REST API
-        if (url.pathname.startsWith('/cx/')) {
-            await handleCxRoute(req, res, url);
-            return;
-        }
-
-        // MCP server
-        if (url.pathname === '/mcp') {
-            await handleMcpRoute(req, res);
-            return;
-        }
-
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
-    });
+    const server = http.createServer(handleRequest);
 
     const { name: instanceName, description: instanceDescription } = getInstanceIdentity();
     server.listen(port, () => {
